@@ -1,0 +1,7 @@
+Capitulo 1
+
+Este es un capitulo de prueba para el generador de audiolibros. El objetivo es verificar que el texto se convierta correctamente en audio usando una voz en espanol, y que el resultado final sea un archivo con capitulos embebidos.
+
+Capitulo 2
+
+Segundo capitulo de la prueba. Si todo funciona bien, este archivo de audio va a tener dos capitulos separados, cada uno con su propio titulo visible en un reproductor de audiolibros compatible.

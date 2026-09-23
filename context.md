@@ -28,12 +28,33 @@ Decision default: **M4B con capitulos embebidos**, fallback MP3+ID3 si hay probl
 - Features esperables de un audiobook player: velocidad de reproduccion, marcador de posicion (resume), saltos por capitulo, sleep timer.
 - Evaluar: reproductor propio (Kotlin + Media3/ExoPlayer, que soporta M4B y capitulos) vs. simplemente generar el archivo y que el usuario use un player existente (mas rapido, menos control de UX).
 
-## Decisiones pendientes (a resolver con el usuario)
-- [ ] Motor TTS: cloud (Google Cloud TTS, Azure, ElevenLabs, Amazon Polly — mejor calidad, requiere API key/costo) vs local/offline (Coqui TTS, Piper — gratis, offline, calidad variable).
-- [ ] Plataforma de la app generadora fase 1: script/CLI, app de escritorio, o web app.
-- [ ] Stack Android: Kotlin nativo (Media3/ExoPlayer) vs Flutter (dart-flutter skills disponibles en este entorno).
-- [ ] Hosting/distribucion de audiolibros generados (local only vs cloud storage).
+## Decisiones tomadas
+- Motor TTS: **Piper** (local/offline, gratis). Voces: `es_ES-davefx-medium`, `en_US-lessac-medium`.
+- Fase 1: primero validar el pipeline de generacion (CLI/script), recien despues decidir si se envuelve en web app o app de escritorio.
+- Android (fase 2): arrancar con **Flutter**, evaluar despues si conviene pasar a nativo.
+- Formato salida: **M4B** con capitulos embebidos via ffmpeg (confirmado funcionando).
+
+## Estado actual (implementado)
+Pipeline CLI funcional en `src/audiolibro/`:
+- `extract.py` — texto desde PDF (pypdf) / DOCX (python-docx) / TXT. OCR para PDF escaneado: pendiente.
+- `detect_lang.py` — deteccion de idioma (langdetect), soporta es/en, mapea a voz Piper.
+- `chapters.py` — segmentacion en capitulos (detecta "Capitulo/Chapter/Parte N", fallback por longitud).
+- `tts_piper.py` — sintesis de audio offline con Piper.
+- `build_m4b.py` — empaqueta wavs de capitulos en un M4B con capitulos embebidos (ffmpeg).
+- `pipeline.py` — CLI: `python -m audiolibro.pipeline entrada.pdf --out output/libro.m4b`
+
+Probado end-to-end con muestras es/en (`samples/`), capitulos verificados con ffprobe. Voces (~60MB c/u) en `voices/`, no versionadas (`.gitignore`).
+
+## Pendiente / siguientes pasos
+- [ ] OCR fallback para PDFs escaneados.
+- [ ] Portada / metadata (autor, titulo) embebida en el M4B.
+- [ ] Probar con documento largo real (libro completo, no solo texto de prueba).
+- [ ] Evaluar calidad de voz Piper vs alternativas si hace falta mas naturalidad.
+- [ ] Envolver el pipeline en web app / desktop una vez validado con documentos reales.
+- [ ] App Android (Flutter) para reproducir M4B.
+- [ ] Hosting/distribucion de audiolibros generados (local only vs cloud storage) — sin decidir.
 
 ## Repo
 - GitHub: Bocampeon01/audiolibro-generator (privado)
 - Working dir local: `D:\Audio Libro`
+- Entorno: venv Python 3.14 en `.venv/`, dependencias en `requirements.txt`
