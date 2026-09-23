@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audiolibro Generator</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Audiolibro Generator</h1>
+    <p class="subtitle">PDF, DOCX o TXT &rarr; audiolibro M4B con capitulos. Voz local, sin nube.</p>
+  </header>
+
+  <section class="card">
+    <form id="upload-form">
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="file-input" accept=".pdf,.docx,.txt" hidden>
+        <span id="dropzone-text">Arrastra un archivo aca o hace click para elegirlo</span>
+        <span id="dropzone-filename" class="filename"></span>
+      </label>
+
+      <div class="row">
+        <label for="lang-select">Idioma</label>
+        <select id="lang-select">
+          <option value="auto" selected>Autodetectar</option>
+          <option value="es">Espanol</option>
+          <option value="en">English</option>
+        </select>
+        <button type="submit" id="generate-btn">Generar audiolibro</button>
+      </div>
+    </form>
+
+    <div id="progress-box" class="progress-box hidden">
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+      <p id="progress-text">En cola...</p>
+    </div>
+
+    <div id="result-box" class="hidden"></div>
+  </section>
+
+  <section class="card">
+    <h2>Biblioteca</h2>
+    <ul id="library-list" class="library-list"></ul>
+  </section>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
