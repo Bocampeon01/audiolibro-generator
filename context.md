@@ -45,6 +45,20 @@ Pipeline CLI funcional en `src/audiolibro/`:
 
 Probado end-to-end con muestras es/en (`samples/`), capitulos verificados con ffprobe. Voces (~60MB c/u) en `voices/`, no versionadas (`.gitignore`).
 
+## Como correr y probar
+
+### Web (generador)
+```
+.venv\Scripts\python -m uvicorn web.backend.main:app --host 127.0.0.1 --port 8000
+```
+Abrir http://localhost:8000, subir PDF/DOCX/TXT, esperar generacion, descargar M4B. Biblioteca de libros generados visible en la misma pagina.
+
+### App Android (reproductor)
+Codigo en `android_app/`. En esta PC el build de Gradle desde Windows esta roto (bug de sockets AF_UNIX del propio Windows, no relacionado al proyecto — ver Memory.md). Mientras no se resuelva:
+- Build desde WSL2 (ver receta completa en Memory.md, seccion "RESUELTO").
+- APK debug ya compilado y probado en emulador (`android14`): conecta al servidor web (poner la URL, `10.0.2.2:8000` en emulador o la IP LAN de la PC en celular fisico), descarga el libro, reproduce con capitulos/resume/velocidad.
+- Tambien se puede importar un `.m4b` directo con el boton "Importar" (file picker), sin pasar por el servidor.
+
 ## Pendiente / siguientes pasos
 - [ ] OCR fallback para PDFs escaneados.
 - [ ] Portada / metadata (autor, titulo) embebida en el M4B.
