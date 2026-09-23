@@ -59,13 +59,17 @@ class LibraryService {
   }
 
   Future<Book?> importFromPicker() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['m4b'],
-    );
+    // FileType.any (en vez de custom+allowedExtensions): algunos proveedores
+    // (WhatsApp, Drive) no reportan bien la extension/MIME de un .m4b y el
+    // filtro estricto los deja afuera del selector. Validamos nosotros.
+    final result = await FilePicker.platform.pickFiles(type: FileType.any);
     if (result == null || result.files.single.path == null) return null;
 
     final source = File(result.files.single.path!);
+    if (!source.path.toLowerCase().endsWith('.m4b')) {
+      throw Exception('Elegiste "${source.uri.pathSegments.last}", que no es un .m4b');
+    }
+
     final dir = await libraryDir();
     final destPath = '${dir.path}/${source.uri.pathSegments.last}';
     final dest = await source.copy(destPath);
