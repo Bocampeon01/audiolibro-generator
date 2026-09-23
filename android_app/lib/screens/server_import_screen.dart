@@ -82,9 +82,26 @@ class _ServerImportScreenState extends State<ServerImportScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'Esto solo funciona si tu celular esta conectado al mismo WiFi '
+                'que la PC, y la PC tiene la web de audiolibro-generator corriendo '
+                'en ese momento.\n\n'
+                'Si no estas en esa red (por ejemplo con datos moviles, o la PC '
+                'apagada), no va a conectar. Usa "Importar" en vez de esto: '
+                'mandate el .m4b por Drive, OneDrive o WhatsApp y elegilo ahi.',
+                style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.4),
+              ),
+            ),
+            const SizedBox(height: 12),
             const Text(
-              'Direccion del servidor web (PC corriendo audiolibro-generator). '
-              'En emulador Android usa 10.0.2.2; en celular fisico usa la IP LAN de la PC.',
+              'Direccion del servidor web. En emulador Android usa 10.0.2.2; '
+              'en celular fisico usa la IP LAN de la PC (ej: 192.168.1.X:8000).',
               style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
             const SizedBox(height: 8),

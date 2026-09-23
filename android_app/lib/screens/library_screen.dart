@@ -116,11 +116,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          FloatingActionButton.extended(
-            heroTag: 'server',
-            onPressed: _openServerImport,
-            icon: const Icon(Icons.cloud_download),
-            label: const Text('Servidor'),
+          Tooltip(
+            message: 'Solo si el celular esta en el mismo WiFi que la PC.\n'
+                'Sin esa red, usa "Importar".',
+            child: FloatingActionButton.extended(
+              heroTag: 'server',
+              onPressed: _openServerImport,
+              icon: const Icon(Icons.cloud_download),
+              label: const Text('Servidor'),
+            ),
           ),
           const SizedBox(height: 12),
           FloatingActionButton.extended(
