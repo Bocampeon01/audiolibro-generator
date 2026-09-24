@@ -25,8 +25,10 @@ ProgressCallback = Callable[[str, int, int], None]
 
 def _synthesize_chapter(
     chapter_text: str, voice_name: str, work_dir: Path, chapter_index: int
-) -> tuple[Path, list[dict]]:
+) -> tuple[Path, list[dict]] | None:
     sentence_texts = sentences_mod.split_into_sentences(chapter_text)
+    if not sentence_texts:
+        return None
 
     sentence_wavs = []
     for i, sent in enumerate(sentence_texts):
@@ -53,6 +55,7 @@ def run(
     voice_id: str | None,
     keep_temp: bool,
     on_progress: Optional[ProgressCallback] = None,
+    title: str | None = None,
 ) -> None:
     def report(stage: str, step: int, total: int) -> None:
         print(f"[{step}/{total}] {stage}")
@@ -77,26 +80,34 @@ def run(
     print(f"      {len(chs)} capitulos/partes detectados")
 
     work_dir = Path(tempfile.mkdtemp(prefix="audiolibro_"))
-    chapter_wavs = []
-    chapter_sentences = []
-    for i, ch in enumerate(chs, start=1):
-        report(f"Sintetizando capitulo {i}/{len(chs)}: {ch.title[:60]}", 4, 5)
-        chapter_wav, sentence_infos = _synthesize_chapter(ch.text, voice_name, work_dir, i)
-        chapter_wavs.append(chapter_wav)
-        chapter_sentences.append(sentence_infos)
+    try:
+        chapter_titles = []
+        chapter_wavs = []
+        chapter_sentences = []
+        for i, ch in enumerate(chs, start=1):
+            report(f"Sintetizando capitulo {i}/{len(chs)}: {ch.title[:60]}", 4, 5)
+            result = _synthesize_chapter(ch.text, voice_name, work_dir, i)
+            if result is None:
+                continue
+            chapter_titles.append(ch.title)
+            chapter_wavs.append(result[0])
+            chapter_sentences.append(result[1])
 
-    report("Empaquetando M4B...", 5, 5)
-    build_m4b_mod.build_m4b(
-        chapter_titles=[c.title for c in chs],
-        chapter_wavs=chapter_wavs,
-        chapter_sentences=chapter_sentences,
-        out_m4b=out_path,
-        book_title=input_path.stem,
-        work_dir=work_dir,
-    )
+        if not chapter_wavs:
+            raise ValueError("El documento no tiene texto que se pueda leer en voz alta.")
 
-    if not keep_temp:
-        shutil.rmtree(work_dir, ignore_errors=True)
+        report("Empaquetando M4B...", 5, 5)
+        build_m4b_mod.build_m4b(
+            chapter_titles=chapter_titles,
+            chapter_wavs=chapter_wavs,
+            chapter_sentences=chapter_sentences,
+            out_m4b=out_path,
+            book_title=title or input_path.stem,
+            work_dir=work_dir,
+        )
+    finally:
+        if not keep_temp:
+            shutil.rmtree(work_dir, ignore_errors=True)
 
     print(f"Listo: {out_path}")
 

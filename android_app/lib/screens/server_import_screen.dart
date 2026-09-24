@@ -1,10 +1,15 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/chapter.dart';
 import '../services/library_service.dart';
+
+class _JobFailed implements Exception {
+  final String message;
+  _JobFailed(this.message);
+}
 
 class ServerImportScreen extends StatefulWidget {
   const ServerImportScreen({super.key});
@@ -134,11 +139,11 @@ class _DownloadTabState extends State<_DownloadTab> {
     });
     try {
       final books = await widget.service.fetchServerLibrary(widget.baseUrlGetter());
-      setState(() => _books = books);
+      if (mounted) setState(() => _books = books);
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -156,7 +161,7 @@ class _DownloadTabState extends State<_DownloadTab> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
-      setState(() => _downloading.remove(item.name));
+      if (mounted) setState(() => _downloading.remove(item.name));
     }
   }
 
@@ -190,7 +195,7 @@ class _DownloadTabState extends State<_DownloadTab> {
                       return Card(
                         child: ListTile(
                           title: Text(book.title),
-                          subtitle: Text('${book.sizeMb} MB · ${book.chaptersCount} capitulos'),
+                          subtitle: Text('${book.sizeMb} MB · ${chaptersLabel(book.chaptersCount)}'),
                           trailing: downloading
                               ? const SizedBox(
                                   width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
@@ -231,7 +236,6 @@ class _GenerateTabState extends State<_GenerateTab> {
   String? _stage;
   int _step = 0;
   int _total = 5;
-  Timer? _pollTimer;
 
   @override
   void initState() {
@@ -239,20 +243,14 @@ class _GenerateTabState extends State<_GenerateTab> {
     _loadCatalog();
   }
 
-  @override
-  void dispose() {
-    _pollTimer?.cancel();
-    super.dispose();
-  }
-
   Future<void> _loadCatalog() async {
+    setState(() => _catalogError = null);
     try {
       final catalog = await widget.service.fetchVoices(widget.baseUrlGetter());
-      setState(() {
-        _catalog = catalog;
-        _catalogError = null;
-      });
+      if (!mounted) return;
+      setState(() => _catalog = catalog);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _catalogError = 'No se pudo conectar al servidor: $e');
     }
   }
@@ -260,7 +258,7 @@ class _GenerateTabState extends State<_GenerateTab> {
   Future<void> _pickFile() async {
     try {
       final file = await widget.service.pickDocument();
-      if (file != null) setState(() => _selectedFile = file);
+      if (file != null && mounted) setState(() => _selectedFile = file);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
@@ -281,50 +279,55 @@ class _GenerateTabState extends State<_GenerateTab> {
     try {
       final jobId =
           await widget.service.generateOnServer(baseUrl, _selectedFile!, _lang, _voice);
-      _pollTimer = Timer.periodic(const Duration(seconds: 1), (_) => _poll(baseUrl, jobId));
-    } catch (e) {
+      final outName = await _waitForJob(baseUrl, jobId);
+      if (!mounted) return;
+      setState(() => _stage = 'Descargando audiolibro al celular...');
+      final book = await widget.service.downloadGeneratedJob(baseUrl, jobId, outName);
+      if (!mounted) return;
       setState(() {
         _generating = false;
-        _error = e.toString();
+        _selectedFile = null;
+      });
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Audiolibro generado: ${book.title}')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _generating = false;
+        _error = e is _JobFailed ? e.message : 'Error: $e';
       });
     }
   }
 
-  Future<void> _poll(String baseUrl, String jobId) async {
-    try {
-      final job = await widget.service.fetchJobStatus(baseUrl, jobId);
+  /// Consulta el job de a una por vez (nunca dos pedidos en vuelo: con Timer.periodic
+  /// dos respuestas "done" solapadas descargaban el mismo archivo en paralelo).
+  /// Tolera cortes breves de red antes de rendirse. Devuelve el nombre del M4B.
+  Future<String> _waitForJob(String baseUrl, String jobId) async {
+    var consecutiveErrors = 0;
+    while (mounted) {
+      await Future.delayed(const Duration(seconds: 1));
+      final Map<String, dynamic> job;
+      try {
+        job = await widget.service.fetchJobStatus(baseUrl, jobId);
+        consecutiveErrors = 0;
+      } catch (_) {
+        if (++consecutiveErrors >= 10) {
+          throw _JobFailed('Se perdio la conexion con el servidor');
+        }
+        continue;
+      }
+      if (!mounted) break;
       setState(() {
         _stage = job['stage'] as String?;
         _step = job['step'] as int? ?? 0;
         _total = job['total'] as int? ?? 5;
       });
-
-      if (job['status'] == 'done') {
-        _pollTimer?.cancel();
-        final book = await widget.service
-            .downloadGeneratedJob(baseUrl, jobId, job['out_name'] as String);
-        setState(() {
-          _generating = false;
-          _selectedFile = null;
-        });
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('Audiolibro generado: ${book.title}')));
-        }
-      } else if (job['status'] == 'error') {
-        _pollTimer?.cancel();
-        setState(() {
-          _generating = false;
-          _error = job['error'] as String? ?? 'Fallo la generacion';
-        });
+      if (job['status'] == 'done') return job['out_name'] as String;
+      if (job['status'] == 'error') {
+        throw _JobFailed(job['error'] as String? ?? 'Fallo la generacion');
       }
-    } catch (e) {
-      _pollTimer?.cancel();
-      setState(() {
-        _generating = false;
-        _error = 'Se perdio la conexion con el servidor';
-      });
     }
+    throw _JobFailed('Cancelado');
   }
 
   @override

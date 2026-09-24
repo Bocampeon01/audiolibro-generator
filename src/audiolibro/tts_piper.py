@@ -1,10 +1,14 @@
 """Sintesis de voz con Piper (offline)."""
+import threading
 import wave
 from pathlib import Path
 
 from piper import PiperVoice
 
 _voice_cache: dict[str, PiperVoice] = {}
+# Piper fonemiza con espeak-ng, que usa estado global en C: dos sintesis en paralelo
+# (dos pedidos a la web a la vez) pueden corromperse o crashear el proceso.
+_synth_lock = threading.Lock()
 
 
 def _load_voice(voices_dir: Path, voice_name: str) -> PiperVoice:
@@ -20,7 +24,13 @@ def _load_voice(voices_dir: Path, voice_name: str) -> PiperVoice:
 
 
 def synthesize_to_wav(text: str, voice_name: str, voices_dir: Path, out_wav: Path) -> None:
-    voice = _load_voice(voices_dir, voice_name)
     out_wav.parent.mkdir(parents=True, exist_ok=True)
-    with wave.open(str(out_wav), "wb") as wav_file:
-        voice.synthesize_wav(text, wav_file)
+    with _synth_lock:
+        voice = _load_voice(voices_dir, voice_name)
+        with wave.open(str(out_wav), "wb") as wav_file:
+            # Formato fijado antes: si el texto no produce audio, queda un wav vacio
+            # valido en vez de "wave.Error: # channels not specified".
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(voice.config.sample_rate)
+            voice.synthesize_wav(text, wav_file, set_wav_format=False)

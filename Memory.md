@@ -42,3 +42,25 @@ Pedido del usuario: elegir voz "en la app", no solo en la web. Aclaracion import
 - **Bug encontrado y arreglado durante la prueba en emulador**: con Idioma+Voz en un `Row` de dos `Expanded`, las etiquetas largas de voz (ej "Espanol (Argentina) - Femenina") desbordaban ("RIGHT OVERFLOWED BY 83 PIXELS"). Se cambio a layout apilado (uno debajo del otro, ancho completo) + `isExpanded: true` y `overflow: TextOverflow.ellipsis` en los `DropdownMenuItem` como refuerzo.
 - Nota sobre `DropdownButtonFormField` de Flutter: el item actualmente seleccionado siempre se dibuja anclado en la posicion del boton (no en su posicion "natural" dentro de la lista) — al automatizar taps con uiautomator hay que volcar el XML *despues* de abrir el dropdown y tomar los bounds frescos de cada opcion, no asumir posiciones de una captura anterior.
 - Probado end-to-end en emulador: elegido documento desde selector nativo (carpeta Downloads, ahi es donde se empuja el archivo de prueba via `adb push` — el push necesita `MSYS_NO_PATHCONV=1` en Git Bash o el path `/sdcard/...` se mangling), idioma+voz seleccionables sin overflow, boton Generar dispara upload -> progreso "Subiendo archivo..." -> job completa -> libro nuevo aparece solo en "Mis audiolibros" sin pasos extra. Confirmado con capturas.
+
+## 2026-09-24 — Revision completa de errores + mejoras
+Pedido: analizar generador y reproductor, buscar errores y mejorar. Cada bug se reprodujo antes de arreglarlo.
+**Generador (todos reproducidos):**
+- GRAVE seguridad: nombre de archivo subido con `..\` escribia fuera de `web/uploads` y el `rmtree` de limpieza borraba el directorio padre (con el ejemplo probado: todo `D:\Audio Libro`). Ahora el upload se guarda como `input.<ext>` y el titulo sale de un stem saneado. Endpoints `/api/library/{name}` tambien bloquean traversal; `lang`/`voice` se validan contra el catalogo.
+- GRAVE funcional: server escuchaba en `127.0.0.1` -> un celular real nunca conectaba (solo el emulador via 10.0.2.2). Ahora `0.0.0.0`, `iniciar_web.bat`, y la web muestra la URL LAN para el celular (`/api/server-info`).
+- `_cap_length` entraba en loop infinito con clausulas largas sin comas (generacion colgada para siempre).
+- Oraciones sin letras (`—`, `...`, `"`) -> Piper no emite audio -> `wave.Error: # channels not specified` tiraba toda la generacion. Se filtran y el wav se formatea antes de sintetizar.
+- Prologo (texto antes del primer "Capitulo") se perdia. Ahora capitulo "Inicio".
+- PDF: cada salto de linea visual cortaba la oracion. Ahora parrafos = lineas en blanco, wraps se unen, guiones de corte se reparan.
+- TXT cp1252 (Bloc de notas ANSI) perdia acentos (utf-8 errors=ignore). Ahora utf-8-sig / utf-16 / cp1252.
+- Falsos capitulos ("Parte di questa..." en italiano): romanos solo cuentan si siguen fin de linea o `: . -`.
+- Dialogo: "—¿Quien? —pregunto" ya no se parte en la acotacion (minuscula tras raya).
+- ffmetadata sin escapar (`=;#\`), stderr de ffmpeg decodificado cp1252 en Windows, jobs en paralelo (espeak-ng no es thread-safe -> lock + executor de 1 worker), temp wavs sin limpiar si fallaba, requirements.txt sin fastapi/uvicorn.
+**Reproductor:**
+- Importar desde WhatsApp/Drive perdia capitulos y texto (file_picker copia solo el archivo elegido). Solucion: el M4B ahora embebe el JSON de sync en el tag `lyrics` (©lyr); la app lo parsea (`mp4_metadata.dart`, port 1:1 del parser Python de los tests) y cachea el sidecar. Verificado en emulador con un .m4b solo.
+- Descargas cargaban el archivo entero en RAM (OOM con libros reales). Ahora streaming a `.part` + rename.
+- Polling de "Generar" con Timer.periodic podia solapar y descargar el mismo archivo 2 veces en paralelo; setState tras dispose. Ahora loop secuencial, tolera 10 cortes de red.
+- Texto sincronizado: tras saltos lejanos el resaltado quedaba fuera de pantalla (GlobalKey sobre item no construido). Ahora `scrollable_positioned_list`. Verificado: salto a 04:17/04:22 muestra oracion 59 resaltada.
+- Sin reproduccion en segundo plano. Ahora `just_audio_background` (MainActivity extiende AudioServiceActivity, servicio mediaPlayback en manifest). Verificado: con pantalla apagada llego al final (position=24431 de 24.4s), notificacion con controles, tecla MEDIA_PLAY funciona.
+- Archivo corrupto -> spinner infinito (ahora mensaje), libro terminado reabria al final (ahora 0), borrar sin confirmar (ahora dialogo), "1 capitulos".
+**Tests:** 20 pytest (texto, seguridad web, integracion Piper+ffmpeg que valida JSON embebido == sidecar) + 3 flutter test (parser MP4 sobre fixture real). Tip automatizacion emulador: helper que toca nodos por texto via uiautomator (en scratchpad), mucho mas confiable que coordenadas de screenshots.

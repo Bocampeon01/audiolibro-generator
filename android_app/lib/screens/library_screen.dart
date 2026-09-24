@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/book.dart';
+import '../models/chapter.dart';
 import '../services/library_service.dart';
 import 'player_screen.dart';
 import 'server_import_screen.dart';
@@ -51,6 +52,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
     await _refresh();
   }
 
+  Future<bool> _confirmDelete(Book book) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Borrar audiolibro'),
+        content: Text('Se borra "${book.title}" del celular. No se puede deshacer.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Borrar')),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
+
   Future<void> _deleteBook(Book book) async {
     await _service.deleteBook(book);
     await _refresh();
@@ -96,6 +112,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         child: const Icon(Icons.delete, color: Colors.white),
                       ),
                       direction: DismissDirection.endToStart,
+                      confirmDismiss: (_) => _confirmDelete(book),
                       onDismissed: (_) => _deleteBook(book),
                       child: ListTile(
                         leading: const Icon(Icons.menu_book),
@@ -103,7 +120,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         subtitle: Text(
                           book.chapters.isEmpty
                               ? 'Sin capitulos detectados'
-                              : '${book.chapters.length} capitulos',
+                              : chaptersLabel(book.chapters.length),
                         ),
                         onTap: () => Navigator.push(
                           context,

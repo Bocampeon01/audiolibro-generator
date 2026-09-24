@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 
 import 'screens/library_screen.dart';
 
-void main() {
+Future<void> main() async {
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.audiolibro.audiolibro_player.audio',
+    androidNotificationChannelName: 'Reproduccion de audiolibros',
+    androidNotificationOngoing: true,
+  );
   runApp(const AudiolibroApp());
 }
 

@@ -38,6 +38,21 @@ header h1 {
   margin: 0 0 32px;
 }
 
+.phone-url {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: -20px 0 28px;
+}
+
+.phone-url code {
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  user-select: all;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);

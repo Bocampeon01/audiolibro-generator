@@ -51,6 +51,16 @@ function updateVoiceOptions() {
 langSelect.addEventListener("change", updateVoiceOptions);
 loadVoices();
 
+async function loadServerInfo() {
+  const res = await fetch("/api/server-info");
+  const { phone_url } = await res.json();
+  if (phone_url) {
+    document.getElementById("phone-url-value").textContent = phone_url;
+    document.getElementById("phone-url").classList.remove("hidden");
+  }
+}
+loadServerInfo();
+
 dropzone.addEventListener("click", () => fileInput.click());
 dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("dragover"); });
 dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
@@ -158,10 +168,17 @@ async function loadLibrary() {
   }
   for (const book of books) {
     const li = document.createElement("li");
-    li.innerHTML = `
-      <span>${book.name}<br><span class="meta">${book.size_mb} MB</span></span>
-      <a href="${book.download_url}" download>Descargar</a>
-    `;
+    const info = document.createElement("span");
+    info.append(book.title, document.createElement("br"));
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = `${book.size_mb} MB · ${book.chapters_count} capitulos`;
+    info.append(meta);
+    const link = document.createElement("a");
+    link.href = book.download_url;
+    link.download = book.name;
+    link.textContent = "Descargar";
+    li.append(info, link);
     libraryList.appendChild(li);
   }
 }

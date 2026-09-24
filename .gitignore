@@ -7,4 +7,7 @@ __pycache__/
 .pytest_cache/
 *.wav
 *.m4b
+!android_app/test/fixtures/*.m4b
+web/uploads/
+.pytest_cache/
 *.mp3

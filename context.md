@@ -54,10 +54,15 @@ Probado end-to-end en es/en/fr con voces variadas, sidecar de oraciones verifica
 ## Como correr y probar
 
 ### Web (generador)
-```
-.venv\Scripts\python -m uvicorn web.backend.main:app --host 127.0.0.1 --port 8000
-```
-Abrir http://localhost:8000, subir PDF/DOCX/TXT, esperar generacion, descargar M4B. Biblioteca de libros generados visible en la misma pagina.
+Doble click en `iniciar_web.bat` (o `.venv\Scripts\python -m uvicorn web.backend.main:app --host 0.0.0.0 --port 8000`).
+Abre http://localhost:8000. La pagina muestra la URL para el celular (IP de la PC en la red, ej `http://192.168.0.217:8000`). `--host 0.0.0.0` es obligatorio para que un celular real conecte; Windows pide permiso de firewall la primera vez (aceptar "Redes privadas").
+
+### Tests
+- Python: `.venv\Scripts\python -m pytest tests` (texto, capitulos, encoding, seguridad de la web, integracion completa Piper+ffmpeg).
+- Flutter (en WSL): `flutter test` (parser MP4 contra `test/fixtures/sample.m4b` generado por el pipeline, smoke test).
+
+### Formato del M4B generado
+M4B estandar (AAC + capitulos embebidos, abre en cualquier reproductor). Ademas lleva en el tag `lyrics` (atom `©lyr`) un JSON `{title, chapters, sentences}` con el texto y tiempos de cada oracion: la app lo lee al importar, asi un `.m4b` mandado solo por WhatsApp/Drive conserva capitulos y texto sincronizado. El `.chapters.json` de al lado es el mismo JSON (lo usa el servidor para `/meta`).
 
 ### App Android (reproductor)
 Codigo en `android_app/`. En esta PC el build de Gradle desde Windows esta roto (bug de sockets AF_UNIX del propio Windows, no relacionado al proyecto — ver Memory.md). Mientras no se resuelva:
@@ -65,7 +70,14 @@ Codigo en `android_app/`. En esta PC el build de Gradle desde Windows esta roto 
 - APK debug ya compilado y probado en emulador (`android14`): conecta al servidor web (poner la URL, `10.0.2.2:8000` en emulador o la IP LAN de la PC en celular fisico), descarga el libro, reproduce con capitulos/resume/velocidad.
 - Tambien se puede importar un `.m4b` directo con el boton "Importar" (file picker), sin pasar por el servidor.
 
+### App Android — reproduccion en segundo plano
+`just_audio_background`: sigue sonando con pantalla apagada o en otra app, notificacion con controles, teclas multimedia/auriculares. El reproductor esta atado a la pantalla del libro: volver a la biblioteca corta el audio (ver pendientes: mini-player).
+
 ## Pendiente / siguientes pasos
+- [ ] Mini-player persistente (seguir escuchando mientras se navega la biblioteca).
+- [ ] Sleep timer (apagar en X minutos / al terminar capitulo).
+- [ ] Si se sale de la pantalla "Generar" a mitad, el libro queda en el servidor pero no se baja solo (se puede bajar desde "Descargar").
+- [ ] Capitulos con numero en palabras ("Capitulo primero") no se detectan: caen al corte por longitud.
 - [ ] OCR fallback para PDFs escaneados.
 - [ ] Portada / metadata (autor, titulo) embebida en el M4B.
 - [ ] Probar con documento largo real (libro completo, no solo texto de prueba).

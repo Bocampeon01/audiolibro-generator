@@ -2,4 +2,10 @@ piper-tts
 pypdf
 python-docx
 langdetect
-mutagen
+fastapi
+uvicorn[standard]
+python-multipart
+
+# tests
+pytest
+httpx

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../models/book.dart';
 import '../models/chapter.dart';
@@ -20,13 +22,18 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   final _player = AudioPlayer();
   final _positionService = PlaybackPositionService();
-  final _currentSentenceKey = GlobalKey();
+  final _itemScrollController = ItemScrollController();
+  final Map<Chapter?, List<Sentence>> _sentencesByChapter = {};
   Timer? _saveTimer;
   double _speed = 1.0;
   bool _ready = false;
+  String? _loadError;
   bool _showText = false;
-  int? _lastHighlightedIndex;
+  Duration? _highlightedStart;
 
+  // Guardar una posicion a menos de esto del final = libro terminado: al reabrir
+  // arranca de cero en vez de "reproducir" los ultimos segundos.
+  static const _finishedThreshold = Duration(seconds: 5);
   static const _speeds = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
   @override
@@ -36,7 +43,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _init() async {
-    await _player.setFilePath(widget.book.filePath);
+    try {
+      // tag MediaItem: lo usa just_audio_background para la notificacion y la
+      // pantalla de bloqueo; el audio sigue con la pantalla apagada o en otra app.
+      await _player.setAudioSource(AudioSource.file(
+        widget.book.filePath,
+        tag: MediaItem(id: widget.book.id, title: widget.book.title, album: 'Audiolibro'),
+      ));
+    } catch (e) {
+      if (mounted) setState(() => _loadError = 'No se pudo abrir el audiolibro: $e');
+      return;
+    }
     _speed = await _positionService.loadSpeed();
     await _player.setSpeed(_speed);
 
@@ -45,17 +62,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
       await _player.seek(savedPosition);
     }
 
-    _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      _positionService.savePosition(widget.book.id, _player.position);
-    });
+    _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) => _savePosition());
+    if (mounted) setState(() => _ready = true);
+  }
 
-    setState(() => _ready = true);
+  void _savePosition() {
+    if (!_ready) return;
+    final duration = _player.duration;
+    var position = _player.position;
+    if (duration != null && duration - position < _finishedThreshold) {
+      position = Duration.zero;
+    }
+    _positionService.savePosition(widget.book.id, position);
   }
 
   @override
   void dispose() {
     _saveTimer?.cancel();
-    _positionService.savePosition(widget.book.id, _player.position);
+    _savePosition();
     _player.dispose();
     super.dispose();
   }
@@ -68,15 +92,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   List<Sentence> _sentencesForChapter(Chapter? chapter) {
-    if (chapter == null) return widget.book.sentences;
-    return widget.book.sentences
-        .where((s) => s.start >= chapter.start && s.start < chapter.end)
-        .toList();
+    return _sentencesByChapter.putIfAbsent(chapter, () {
+      if (chapter == null) return widget.book.sentences;
+      return widget.book.sentences
+          .where((s) => s.start >= chapter.start && s.start < chapter.end)
+          .toList();
+    });
   }
 
   int _currentSentenceIndex(List<Sentence> sentences, Duration position) {
-    for (var i = 0; i < sentences.length; i++) {
-      if (position >= sentences[i].start && position < sentences[i].end) return i;
+    // Busqueda binaria: las oraciones estan ordenadas y son contiguas.
+    var lo = 0, hi = sentences.length - 1;
+    while (lo <= hi) {
+      final mid = (lo + hi) >> 1;
+      if (position < sentences[mid].start) {
+        hi = mid - 1;
+      } else if (position >= sentences[mid].end) {
+        lo = mid + 1;
+      } else {
+        return mid;
+      }
     }
     return -1;
   }
@@ -119,26 +154,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
 
     final currentIndex = _currentSentenceIndex(sentences, position);
-    if (currentIndex != -1 && currentIndex != _lastHighlightedIndex) {
-      _lastHighlightedIndex = currentIndex;
+    final currentStart = currentIndex == -1 ? null : sentences[currentIndex].start;
+    if (currentStart != null && currentStart != _highlightedStart) {
+      _highlightedStart = currentStart;
+      // ItemScrollController llega a items que la lista todavia no construyo
+      // (saltos de capitulo o del slider), cosa que ensureVisible no podia.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final ctx = _currentSentenceKey.currentContext;
-        if (ctx != null) {
-          Scrollable.ensureVisible(ctx, alignment: 0.5, duration: const Duration(milliseconds: 300));
+        if (_itemScrollController.isAttached) {
+          _itemScrollController.scrollTo(
+            index: currentIndex,
+            alignment: 0.3,
+            duration: const Duration(milliseconds: 300),
+          );
         }
       });
     }
 
-    return ListView.builder(
+    return ScrollablePositionedList.builder(
+      key: ValueKey(chapter?.start),
+      itemScrollController: _itemScrollController,
+      initialScrollIndex: currentIndex == -1 ? 0 : currentIndex,
+      initialAlignment: 0.3,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       itemCount: sentences.length,
       itemBuilder: (context, i) {
         final isCurrent = i == currentIndex;
-        return Container(
-          key: isCurrent ? _currentSentenceKey : null,
-          margin: const EdgeInsets.only(bottom: 14),
-          child: GestureDetector(
-            onTap: () => _player.seek(sentences[i].start),
+        return GestureDetector(
+          onTap: () => _player.seek(sentences[i].start),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 14),
             child: Text(
               sentences[i].text,
               style: TextStyle(
@@ -190,11 +234,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
             StreamBuilder<PlayerState>(
               stream: _player.playerStateStream,
               builder: (context, snap) {
-                final playing = snap.data?.playing ?? false;
+                final state = snap.data;
+                final playing = state?.playing ?? false;
+                final completed = state?.processingState == ProcessingState.completed;
                 return IconButton(
                   iconSize: 64,
-                  icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_filled),
-                  onPressed: () => playing ? _player.pause() : _player.play(),
+                  icon: Icon(
+                    completed
+                        ? Icons.replay_circle_filled
+                        : playing
+                            ? Icons.pause_circle_filled
+                            : Icons.play_circle_filled,
+                  ),
+                  onPressed: () async {
+                    if (completed) {
+                      await _player.seek(Duration.zero);
+                      await _player.play();
+                    } else if (playing) {
+                      await _player.pause();
+                    } else {
+                      await _player.play();
+                    }
+                  },
                 );
               },
             ),
@@ -224,11 +285,54 @@ class _PlayerScreenState extends State<PlayerScreen> {
               TextButton.icon(
                 onPressed: _showChapters,
                 icon: const Icon(Icons.list),
-                label: Text('${widget.book.chapters.length} capitulos'),
+                label: Text(chaptersLabel(widget.book.chapters.length)),
               ),
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loadError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(_loadError!, style: const TextStyle(color: Colors.redAccent)),
+        ),
+      );
+    }
+    if (!_ready) return const Center(child: CircularProgressIndicator());
+
+    return StreamBuilder<Duration?>(
+      stream: _player.durationStream,
+      builder: (context, durationSnap) {
+        final duration = durationSnap.data ?? Duration.zero;
+        return StreamBuilder<Duration>(
+          stream: _player.positionStream,
+          builder: (context, positionSnap) {
+            final position = positionSnap.data ?? Duration.zero;
+            final chapter = _currentChapter(position);
+            if (_showText) {
+              return Column(
+                children: [
+                  Expanded(child: _buildTextPanel(position, chapter)),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                    child: _buildControls(position, duration, chapter),
+                  ),
+                ],
+              );
+            }
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: _buildControls(position, duration, chapter),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -242,42 +346,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
             IconButton(
               icon: Icon(_showText ? Icons.article : Icons.article_outlined),
               tooltip: 'Seguir el texto mientras escuchas',
-              onPressed: () => setState(() => _showText = !_showText),
+              onPressed: () => setState(() {
+                _showText = !_showText;
+                _highlightedStart = null;
+              }),
             ),
         ],
       ),
-      body: !_ready
-          ? const Center(child: CircularProgressIndicator())
-          : StreamBuilder<Duration?>(
-              stream: _player.durationStream,
-              builder: (context, durationSnap) {
-                final duration = durationSnap.data ?? Duration.zero;
-                return StreamBuilder<Duration>(
-                  stream: _player.positionStream,
-                  builder: (context, positionSnap) {
-                    final position = positionSnap.data ?? Duration.zero;
-                    final chapter = _currentChapter(position);
-                    if (_showText) {
-                      return Column(
-                        children: [
-                          Expanded(child: _buildTextPanel(position, chapter)),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                            child: _buildControls(position, duration, chapter),
-                          ),
-                        ],
-                      );
-                    }
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: _buildControls(position, duration, chapter),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+      body: _buildBody(),
     );
   }
 }

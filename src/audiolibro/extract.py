@@ -5,12 +5,23 @@ from pathlib import Path
 def extract_text(path: Path) -> str:
     suffix = path.suffix.lower()
     if suffix == ".txt":
-        return path.read_text(encoding="utf-8", errors="ignore")
+        return _decode_txt(path.read_bytes())
     if suffix == ".pdf":
         return _extract_pdf(path)
     if suffix in (".docx",):
         return _extract_docx(path)
     raise ValueError(f"Formato no soportado: {suffix}")
+
+
+def _decode_txt(data: bytes) -> str:
+    # Bloc de notas de Windows guarda en UTF-8 (con o sin BOM), UTF-16 ("Unicode")
+    # o ANSI/cp1252. Decodificar cp1252 como utf-8 con errors=ignore borra los acentos.
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16")
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("cp1252", errors="replace")
 
 
 def _extract_pdf(path: Path) -> str:

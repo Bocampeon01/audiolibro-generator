@@ -17,6 +17,11 @@ class PlaybackPositionService {
     await prefs.setInt(_key(bookId), position.inMilliseconds);
   }
 
+  Future<void> clear(String bookId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_key(bookId));
+  }
+
   Future<double> loadSpeed() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getDouble(_speedKey) ?? 1.0;

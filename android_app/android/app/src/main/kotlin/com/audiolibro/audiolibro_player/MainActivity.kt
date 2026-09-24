@@ -1,5 +1,7 @@
 package com.audiolibro.audiolibro_player
 
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 
-class MainActivity : FlutterActivity()
+// AudioServiceActivity (en vez de FlutterActivity) comparte el engine de Flutter con el
+// servicio de audio en segundo plano de just_audio_background.
+class MainActivity : AudioServiceActivity()

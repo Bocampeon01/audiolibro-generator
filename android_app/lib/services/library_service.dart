@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/book.dart';
+import 'mp4_metadata.dart';
+import 'playback_position_service.dart';
 
 class ServerBook {
   final String name;
@@ -82,13 +84,57 @@ class LibraryService {
         .listSync()
         .whereType<File>()
         .where((f) => f.path.endsWith('.m4b'))
-        .toList();
+        .toList()
+      ..sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
     final books = <Book>[];
     for (final file in files) {
+      await _ensureSidecar(file);
       books.add(await Book.fromFile(file));
     }
     return books;
   }
+
+  /// Si el libro no tiene .chapters.json al lado (importado solo, via WhatsApp/Drive),
+  /// lo reconstruye desde el JSON embebido en el propio M4B. Se hace una vez: despues
+  /// queda cacheado en disco.
+  Future<void> _ensureSidecar(File m4b) async {
+    final sidecar = File('${m4b.path}.chapters.json');
+    if (await sidecar.exists()) return;
+    try {
+      final json = await Mp4Metadata.readSyncJson(m4b);
+      if (json != null) await sidecar.writeAsString(json);
+    } catch (_) {
+      // archivo no-MP4 o sin metadata: el libro se reproduce igual, sin capitulos
+    }
+  }
+
+  /// Descarga en streaming a un .part y renombra al final: un libro de cientos de MB
+  /// no entra en memoria, y una descarga cortada no deja un .m4b roto en la biblioteca.
+  Future<File> _downloadTo(Uri url, String destPath) async {
+    final client = http.Client();
+    final part = File('$destPath.part');
+    try {
+      final res = await client.send(http.Request('GET', url));
+      if (res.statusCode != 200) {
+        throw Exception('No se pudo descargar (${res.statusCode})');
+      }
+      final sink = part.openWrite();
+      try {
+        await res.stream.pipe(sink);
+      } finally {
+        await sink.close();
+      }
+      return await part.rename(destPath);
+    } catch (_) {
+      if (await part.exists()) await part.delete();
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Nombre de archivo que manda el servidor, sin directorios.
+  String _safeName(String name) => name.split(RegExp(r'[/\\]')).last;
 
   Future<Book?> importFromPicker() async {
     // FileType.any (en vez de custom+allowedExtensions): algunos proveedores
@@ -105,12 +151,12 @@ class LibraryService {
     final dir = await libraryDir();
     final destPath = '${dir.path}/${source.uri.pathSegments.last}';
     final dest = await source.copy(destPath);
-
-    // copiar sidecar de capitulos si esta al lado del original
-    final sourceSidecar = File('${source.path}.chapters.json');
-    if (await sourceSidecar.exists()) {
-      await sourceSidecar.copy('$destPath.chapters.json');
-    }
+    // file_picker copia el archivo elegido a la cache de la app: se libera, y el
+    // .chapters.json de al lado nunca llega (por eso se lee el embebido).
+    await FilePicker.platform.clearTemporaryFiles();
+    final staleSidecar = File('$destPath.chapters.json'); // de un import previo con mismo nombre
+    if (await staleSidecar.exists()) await staleSidecar.delete();
+    await _ensureSidecar(dest);
 
     return Book.fromFile(dest);
   }
@@ -126,22 +172,25 @@ class LibraryService {
 
   Future<Book> downloadFromServer(String baseUrl, ServerBook item) async {
     final dir = await libraryDir();
-    final destPath = '${dir.path}/${item.name}';
-
-    final res = await http.get(Uri.parse('$baseUrl${item.downloadUrl}'));
-    if (res.statusCode != 200) {
-      throw Exception('No se pudo descargar (${res.statusCode})');
-    }
-    final dest = File(destPath);
-    await dest.writeAsBytes(res.bodyBytes);
-
-    final metaRes = await http.get(Uri.parse('$baseUrl${item.metaUrl}'));
-    if (metaRes.statusCode == 200) {
-      final sidecar = File('$destPath.chapters.json');
-      await sidecar.writeAsString(metaRes.body);
-    }
-
+    final destPath = '${dir.path}/${_safeName(item.name)}';
+    final dest = await _downloadTo(Uri.parse('$baseUrl${item.downloadUrl}'), destPath);
+    await _saveServerMeta(Uri.parse('$baseUrl${item.metaUrl}'), dest);
     return Book.fromFile(dest);
+  }
+
+  /// Metadata del servidor (necesaria para libros generados antes de que el M4B
+  /// trajera el JSON embebido); si falla, se usa el embebido.
+  Future<void> _saveServerMeta(Uri metaUrl, File m4b) async {
+    final sidecar = File('${m4b.path}.chapters.json');
+    if (await sidecar.exists()) await sidecar.delete();
+    try {
+      final res = await http.get(metaUrl);
+      if (res.statusCode == 200) {
+        await sidecar.writeAsString(res.body);
+        return;
+      }
+    } catch (_) {}
+    await _ensureSidecar(m4b);
   }
 
   Future<VoiceCatalog> fetchVoices(String baseUrl) async {
@@ -191,21 +240,15 @@ class LibraryService {
 
   Future<Book> downloadGeneratedJob(String baseUrl, String jobId, String outName) async {
     final dir = await libraryDir();
-    final destPath = '${dir.path}/$outName';
-
-    final res = await http.get(Uri.parse('$baseUrl/api/jobs/$jobId/download'));
-    if (res.statusCode != 200) {
-      throw Exception('No se pudo descargar el audiolibro generado (${res.statusCode})');
-    }
-    final dest = File(destPath);
-    await dest.writeAsBytes(res.bodyBytes);
-
-    final metaRes = await http.get(Uri.parse('$baseUrl/api/library/$outName/meta'));
-    if (metaRes.statusCode == 200) {
-      final sidecar = File('$destPath.chapters.json');
-      await sidecar.writeAsString(metaRes.body);
-    }
-
+    final name = _safeName(outName);
+    final dest = await _downloadTo(
+      Uri.parse('$baseUrl/api/jobs/${Uri.encodeComponent(jobId)}/download'),
+      '${dir.path}/$name',
+    );
+    await _saveServerMeta(
+      Uri.parse('$baseUrl/api/library/${Uri.encodeComponent(name)}/meta'),
+      dest,
+    );
     return Book.fromFile(dest);
   }
 
@@ -214,5 +257,6 @@ class LibraryService {
     final sidecar = File('${book.filePath}.chapters.json');
     if (await file.exists()) await file.delete();
     if (await sidecar.exists()) await sidecar.delete();
+    await PlaybackPositionService().clear(book.id);
   }
 }

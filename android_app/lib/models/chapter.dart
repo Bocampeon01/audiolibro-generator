@@ -1,3 +1,5 @@
+String chaptersLabel(int count) => count == 1 ? '1 capitulo' : '$count capitulos';
+
 class Chapter {
   final String title;
   final Duration start;
