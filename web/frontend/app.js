@@ -53,10 +53,14 @@ loadVoices();
 
 async function loadServerInfo() {
   const res = await fetch("/api/server-info");
-  const { phone_url } = await res.json();
+  const { phone_url, library_dir } = await res.json();
   if (phone_url) {
     document.getElementById("phone-url-value").textContent = phone_url;
     document.getElementById("phone-url").classList.remove("hidden");
+  }
+  if (library_dir) {
+    document.getElementById("library-dir").textContent = library_dir;
+    document.getElementById("library-hint").classList.remove("hidden");
   }
 }
 loadServerInfo();

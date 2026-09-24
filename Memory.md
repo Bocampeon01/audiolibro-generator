@@ -72,3 +72,10 @@ Pedido: analizar generador y reproductor, buscar errores y mejorar. Cada bug se 
 - **Capitulos con numeros en palabras**: lista cerrada de numerales cardinales/ordinales (incl. femeninos: "Parte segunda") en 6 idiomas. Falso "1 capitulo" durante la prueba = server con codigo viejo en memoria (uvicorn sin reload): reiniciar el server tras cambiar Python.
 - **Release**: `--split-per-abi` -> 20MB arm64 (vs 156MB debug). Bug solo-release encontrado: sin `res/raw/keep.xml` el resource shrinking borra los iconos de audio_service -> "You must specify an icon resource id to build a CustomAction", sin notificacion ni sesion multimedia. Con keep.xml verificado en release x86_64: segundo plano, notificacion, servidor, catalogo, selector OK.
 - Version app 1.1.0+2. APKs publicados en GitHub Release v1.1.0.
+
+## 2026-09-24 — Audiolibros bajados de internet + filtro de Importar (v1.2.0)
+- Usuario ya tenia 13 m4b de LibriVox en `output/` (hasta 260MB, hasta 99 capitulos). Sirvieron de prueba real. NO son del proyecto: no borrarlos ni escribir archivos al lado (por eso el cache de ffprobe va a `web/cache/meta/`).
+- Hallazgo clave: los LibriVox traen SOLO la pista de capitulos QuickTime (sin `chpl`). Un parser solo-chpl los hubiera importado sin capitulos. Se implemento QuickTime en Dart (tref chap -> stts/stsz/stsc/stco); fixture `external_qt.m4b` = external.m4b con chpl removido. Verificado en emulador con OntarioReaders4 real: 23 capitulos, tiempos identicos a ffprobe.
+- Filtro Importar: file_picker con FileType.custom apaga TODO el filtro si alguna extension no la conoce MimeTypeMap; con las 7 elegidas funciona (verificado: no loguea "unsupported"). MediaStore clasifica por contenido (un .m4b es audio/mp4, media_type audio).
+- Instalar debug sobre release falla (versionCode split-per-abi = abi*1000+build, ej 4002): en emulador desinstalar. En el celular del usuario 1.1.0 (2002) -> 1.2.0 (2003) actualiza sin perder datos (misma clave debug de WSL).
+- Release v1.2.0 publicado en GitHub. Manual actualizado (12 pag, seccion 2.7 audiolibros propios).

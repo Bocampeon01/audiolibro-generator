@@ -17,14 +17,17 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from audiolibro import detect_lang, pipeline
+from audiolibro import audio_meta, detect_lang, pipeline
 
 UPLOADS_DIR = ROOT / "web" / "uploads"
 OUTPUT_DIR = ROOT / "output"
 FRONTEND_DIR = ROOT / "web" / "frontend"
 
+META_CACHE_DIR = ROOT / "web" / "cache" / "meta"
+
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+META_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_SUFFIXES = (".pdf", ".docx", ".txt")
 
@@ -89,7 +92,7 @@ def _lan_ip() -> str | None:
 def server_info(request: Request):
     ip = _lan_ip()
     port = request.url.port or 8000
-    return {"phone_url": f"http://{ip}:{port}" if ip else None}
+    return {"phone_url": f"http://{ip}:{port}" if ip else None, "library_dir": str(OUTPUT_DIR)}
 
 
 @app.get("/api/voices")
@@ -156,25 +159,49 @@ def job_download(job_id: str):
     return FileResponse(out_path, media_type="audio/mp4", filename=out_path.name)
 
 
+def _book_meta(path: Path) -> dict:
+    """Metadata del libro: el .chapters.json de los libros generados aca; para los que el
+    usuario copio a mano (bajados de internet) se lee con ffprobe y se cachea FUERA de su
+    carpeta, para no llenarsela de archivos extra."""
+    sidecar = path.with_suffix(path.suffix + ".chapters.json")
+    if sidecar.exists():
+        return json.loads(sidecar.read_text(encoding="utf-8"))
+
+    stat = path.stat()
+    cache = META_CACHE_DIR / f"{path.name}.json"
+    if cache.exists():
+        cached = json.loads(cache.read_text(encoding="utf-8"))
+        if cached.get("mtime") == stat.st_mtime and cached.get("size") == stat.st_size:
+            return cached["meta"]
+
+    meta = audio_meta.probe(path)
+    if meta is None:  # no se cachea: puede ser un archivo que se esta copiando
+        return {"title": path.stem, "chapters": [], "sentences": []}
+    cache.write_text(
+        json.dumps({"mtime": stat.st_mtime, "size": stat.st_size, "meta": meta}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return meta
+
+
+def _library_books() -> list[Path]:
+    files = [p for p in OUTPUT_DIR.iterdir() if p.is_file() and p.suffix.lower() in audio_meta.AUDIO_TYPES]
+    return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
 @app.get("/api/library")
 def library():
     books = []
-    for path in sorted(OUTPUT_DIR.glob("*.m4b"), key=lambda p: p.stat().st_mtime, reverse=True):
-        sidecar = path.with_suffix(path.suffix + ".chapters.json")
-        chapters_count = 0
-        title = path.stem
-        if sidecar.exists():
-            data = json.loads(sidecar.read_text(encoding="utf-8"))
-            title = data.get("title", title)
-            chapters_count = len(data.get("chapters", []))
+    for path in _library_books():
+        meta = _book_meta(path)
         url_name = quote(path.name)
         books.append({
             "name": path.name,
-            "title": title,
+            "title": meta.get("title") or path.stem,
             "size_mb": round(path.stat().st_size / (1024 * 1024), 1),
             "download_url": f"/api/library/{url_name}",
             "meta_url": f"/api/library/{url_name}/meta",
-            "chapters_count": chapters_count,
+            "chapters_count": len(meta.get("chapters", [])),
         })
     return books
 
@@ -182,18 +209,18 @@ def library():
 @app.get("/api/library/{filename}")
 def library_download(filename: str):
     out_path = _library_file(filename)
-    if out_path.suffix != ".m4b" or not out_path.exists():
+    media_type = audio_meta.AUDIO_TYPES.get(out_path.suffix.lower())
+    if media_type is None or not out_path.exists():
         raise HTTPException(404, "No encontrado")
-    return FileResponse(out_path, media_type="audio/mp4", filename=filename)
+    return FileResponse(out_path, media_type=media_type, filename=filename)
 
 
 @app.get("/api/library/{filename}/meta")
 def library_meta(filename: str):
     out_path = _library_file(filename)
-    sidecar = out_path.with_suffix(out_path.suffix + ".chapters.json")
-    if out_path.suffix != ".m4b" or not sidecar.exists():
+    if out_path.suffix.lower() not in audio_meta.AUDIO_TYPES or not out_path.exists():
         raise HTTPException(404, "No hay metadata para este libro")
-    return json.loads(sidecar.read_text(encoding="utf-8"))
+    return _book_meta(out_path)
 
 
 app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")

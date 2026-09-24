@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/audio_formats.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
 import '../services/generation_service.dart';
@@ -59,10 +60,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
     });
   }
 
-  Future<void> _importFile() async {
+  Future<void> _importFile({bool showAll = false}) async {
     try {
-      final book = await _service.importFromPicker();
-      if (book != null) await _refresh();
+      final book = await _service.importFromPicker(showAll: showAll);
+      if (book != null) {
+        await _refresh();
+      } else if (!showAll && mounted) {
+        // Cancelo sin elegir: quizas su archivo no aparecio por el filtro (algun
+        // proveedor informa mal el tipo). Se ofrece ver todo, sin forzarlo.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('¿No aparecia tu archivo?'),
+            action: SnackBarAction(
+              label: 'Ver todos los archivos',
+              onPressed: () => _importFile(showAll: true),
+            ),
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -133,7 +148,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Importa un .m4b o descargalo del servidor',
+                    'Importa un audiolibro (.m4b, .mp3...) o bajalo del servidor',
                     style: TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                 ],
@@ -169,9 +184,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       ),
                       title: Text(book.title),
                       subtitle: Text(
-                        book.chapters.isEmpty
-                            ? 'Sin capitulos detectados'
-                            : chaptersLabel(book.chapters.length),
+                        '${extensionOf(book.filePath).toUpperCase()} · '
+                        '${book.chapters.isEmpty ? 'sin capitulos' : chaptersLabel(book.chapters.length)}',
                       ),
                       onTap: () => Navigator.push(
                         context,

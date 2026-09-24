@@ -44,6 +44,14 @@ header h1 {
   margin: -20px 0 28px;
 }
 
+.library-hint {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: -6px 0 16px;
+  line-height: 1.5;
+}
+
+.library-hint code,
 .phone-url code {
   color: var(--text);
   background: var(--card);

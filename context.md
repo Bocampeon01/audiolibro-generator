@@ -79,6 +79,10 @@ Codigo en `android_app/`. En esta PC el build de Gradle desde Windows esta roto 
 ### Build release (para instalar en el celular)
 En WSL: `flutter build apk --release --split-per-abi` -> `app-arm64-v8a-release.apk` (~20MB, celulares modernos) y `app-armeabi-v7a-release.apk` (~17MB, viejos). Firmado con la clave debug de WSL (sirve para instalar a mano; para Play Store haria falta una clave propia). `android/app/src/main/res/raw/keep.xml` es obligatorio: sin el, el resource shrinking borra los iconos que audio_service busca por nombre y la notificacion/segundo plano fallan solo en release.
 
+### Audiolibros propios (no generados aca)
+- **PC**: copiar a `output/` (la carpeta de la biblioteca; la web la muestra). Formatos: m4b, m4a, mp3, aac, ogg, opus, flac (`audio_meta.AUDIO_TYPES`). El servidor lee titulo y capitulos con ffprobe (M4B: Nero y QuickTime; MP3: ID3 CHAP) y cachea en `web/cache/meta/` (fuera de la carpeta del usuario, invalidado por mtime+tamano).
+- **Celular (Importar)**: selector filtrado a esos formatos (Android muestra el resto en gris y oculta Imagenes/Documentos); si el usuario cancela, snackbar "Ver todos los archivos" sin filtro. Capitulos se leen en Dart de M4B/M4A: `chpl` (ffmpeg/mp4v2) o pista de capitulos QuickTime (LibriVox/iTunes: los LibriVox reales del usuario solo traen esta). MP3 importado por el celu: sin capitulos (por Servidor si llegan).
+
 ## Pendiente / siguientes pasos
 - [ ] Clave de firma propia (necesaria para Play Store y para actualizar sin desinstalar desde otra PC).
 - [ ] Si Android mata la app mientras genera en segundo plano, ese libro hay que bajarlo a mano desde "Descargar".

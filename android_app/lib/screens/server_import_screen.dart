@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/audio_formats.dart';
 import '../models/chapter.dart';
 import '../services/generation_service.dart';
 import '../services/library_service.dart';
@@ -210,7 +211,7 @@ class _DownloadTabState extends State<_DownloadTab> {
                         child: ListTile(
                           title: Text(book.title),
                           subtitle: Text(
-                            '${book.sizeMb} MB · ${chaptersLabel(book.chaptersCount)}',
+                            '${extensionOf(book.name).toUpperCase()} · ${book.sizeMb} MB · ${chaptersLabel(book.chaptersCount)}',
                           ),
                           trailing: downloading
                               ? const SizedBox(

@@ -28,7 +28,7 @@ from reportlab.platypus import (
 HERE = Path(__file__).resolve().parent
 IMG = HERE / "img"
 OUT = HERE / "Manual_Audiolibros.pdf"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 ACCENT = colors.HexColor("#6C5CE7")
 DARK = colors.HexColor("#171A21")
@@ -332,6 +332,23 @@ def part_web():
                    "la dirección que tenés que poner en la app, por ejemplo "
                    + code("http://192.168.0.217:8000") + ". Esa dirección puede cambiar si la PC se "
                    "conecta a otra red: fijate siempre la que muestra la página."))
+
+    story.append(p("2.7 Sumar audiolibros propios (bajados de internet)", "h2"))
+    story.append(p("Si conseguiste audiolibros en otro lado (por ejemplo de LibriVox), no hace falta "
+                   "mandártelos por WhatsApp ni Drive: <b>copialos a la carpeta de la biblioteca</b>, "
+                   + code(r"D:\Audio Libro\output") + ", y recargá la página. Aparecen en la Biblioteca "
+                   "de la web y en la app en <b>Servidor → Descargar</b>, con su título y sus capítulos."))
+    story += table([
+        ["Formato", "Capítulos"],
+        [".m4b · .m4a", "Sí (los que traiga el archivo)"],
+        [".mp3", "Sí, si el archivo trae capítulos (ID3); llegan al celular por Servidor"],
+        [".aac · .ogg · .opus · .flac", "Se reproducen, sin capítulos"],
+    ], [5 * cm, CONTENT_W - 5 * cm])
+    story.append(shot("web_biblioteca", 11 * cm,
+                      "Biblioteca con audiolibros de LibriVox copiados a la carpeta: 99, 23, 18 capítulos…",
+                      crop=(160, 0, 760, 450)))
+    story += callout("el texto sincronizado solo existe en los libros generados con este sistema. "
+                     "Los audiolibros de otras fuentes se escuchan con sus capítulos, sin texto.")
     return story
 
 
@@ -340,20 +357,20 @@ def part_app_basics():
     story.append(p("3.1 Instalar", "h2"))
     story += steps([
         "Descargá el instalador en el celular. Hay dos versiones:"
-        "<br/>• <b>Audiolibros-1.1.0-arm64.apk</b>: para casi cualquier celular de los últimos años. Probá esta primero."
-        "<br/>• <b>Audiolibros-1.1.0-armv7.apk</b>: solo si la anterior dice <i>no compatible</i> (celulares muy viejos).",
+        "<br/>• <b>Audiolibros-1.2.0-arm64.apk</b>: para casi cualquier celular de los últimos años. Probá esta primero."
+        "<br/>• <b>Audiolibros-1.2.0-armv7.apk</b>: solo si la anterior dice <i>no compatible</i> (celulares muy viejos).",
         "Abrí el archivo. Android va a pedir permiso para <b>instalar apps de origen desconocido</b>: "
         "permitilo para el navegador o el administrador de archivos que estés usando.",
         "Tocá <b>Instalar</b>. La app aparece como <b>Audiolibros</b>.",
     ])
     story.append(p("3.2 Pantalla principal", "h2"))
     story += side([
-        p("La biblioteca muestra tus audiolibros, el más reciente arriba, con la cantidad de capítulos. "
-          "Tocá uno para abrirlo."),
+        p("La biblioteca muestra tus audiolibros, el más reciente arriba, con el formato "
+          "(M4B, MP3…) y la cantidad de capítulos. Tocá uno para abrirlo."),
         p("Abajo a la derecha están los botones para agregar libros:"),
         *bullets([
             "<b>Servidor</b>: descargar o generar desde la PC (mismo WiFi).",
-            "<b>Importar</b>: agregar un .m4b que ya tenés en el celular.",
+            "<b>Importar</b>: agregar un audiolibro que ya tenés en el celular.",
         ]),
         p("La primera vez la biblioteca está vacía, como en la captura."),
     ], "app_vacia", "Primera vez: biblioteca vacía.")
@@ -361,14 +378,21 @@ def part_app_basics():
     story.append(p("3.3 Agregar audiolibros", "h2"))
     story += side([
         p("A) Importar un archivo (sin PC, sin WiFi)", "h3"),
-        p("Ideal si te mandaste el <b>.m4b</b> por WhatsApp, Drive, OneDrive, mail o cable."),
+        p("Para audiolibros que ya están en el celular: te los mandaste por WhatsApp, Drive, "
+          "OneDrive o mail, los copiaste por cable, o los bajaste de internet."),
         *steps([
-            "Tocá <b>Importar</b>. Se abre el selector de archivos de Android.",
-            "Buscá el archivo: en <i>Descargas</i>, en la carpeta de WhatsApp, o en Drive/OneDrive "
-            "(aparecen en el menú lateral si tenés esas apps instaladas).",
-            "Tocá el archivo. Se copia a la biblioteca con sus capítulos y su texto.",
+            "Tocá <b>Importar</b>. El selector muestra <b>solo audiolibros</b> (.m4b, .m4a, .mp3, "
+            ".aac, .ogg, .opus, .flac): el resto de los archivos aparece en gris y no se puede tocar.",
+            "Buscalo en <i>Descargas</i>, en la carpeta de WhatsApp o en Drive/OneDrive (menú lateral). "
+            "La sección <b>Audio</b> del menú lista todos los audios del celular juntos.",
+            "Tocá el archivo. Se copia a la biblioteca con su título y capítulos (y el texto, si "
+            "lo generaste con este sistema).",
         ]),
-    ], "app_importar", "Selector de Android (los nombres varían según el celular).")
+        p("<b>¿No aparece?</b> Algunas apps informan mal el tipo de archivo. Cerrá el selector sin "
+          "elegir nada: la app ofrece <b>Ver todos los archivos</b> para buscarlo sin filtro."),
+    ], "app_importar", "Descargas: los audios se pueden elegir, la foto y el txt quedan en gris.")
+    story += phones(("app_importar_menu", "Menú lateral: solo lugares con audio."),
+                    ("app_importar_vertodos", "Al cancelar: opción Ver todos los archivos."), width=3.9 * cm)
     story.append(p("B) Descargar desde el servidor (mismo WiFi)", "h3"))
     story += steps([
         "Con el generador encendido en la PC, tocá <b>Servidor</b> y quedate en la pestaña <b>Descargar</b>.",
@@ -470,6 +494,9 @@ def part_faq():
         ["No detectó los capítulos",
          "Poné cada título en una línea sola, empezando con Capítulo/Chapter/Parte… y un número "
          "(ver 2.5). Si no, se divide en partes por largo."],
+        ["Importé un MP3 y no tiene capítulos",
+         "En el celular solo se leen capítulos de .m4b/.m4a. Copiá el MP3 a la carpeta de la PC "
+         "(ver 2.7) y bajalo con <b>Servidor → Descargar</b>: así llega con sus capítulos."],
         ["Importé un libro y no tiene capítulos ni texto",
          "Los audiolibros generados con versiones anteriores a la 1.1 no traen el texto adentro del "
          "archivo. Volvé a generarlo, o descargalo con Servidor."],

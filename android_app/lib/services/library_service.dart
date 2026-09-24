@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import '../models/audio_formats.dart';
 import '../models/book.dart';
 import 'mp4_metadata.dart';
 import 'playback_position_service.dart';
@@ -90,7 +91,7 @@ class LibraryService {
         dir
             .listSync()
             .whereType<File>()
-            .where((f) => f.path.endsWith('.m4b'))
+            .where((f) => isSupportedAudio(f.path))
             .toList()
           ..sort(
             (a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()),
@@ -103,17 +104,19 @@ class LibraryService {
     return books;
   }
 
-  /// Si el libro no tiene .chapters.json al lado (importado solo, via WhatsApp/Drive),
-  /// lo reconstruye desde el JSON embebido en el propio M4B. Se hace una vez: despues
-  /// queda cacheado en disco.
-  Future<void> _ensureSidecar(File m4b) async {
-    final sidecar = File('${m4b.path}.chapters.json');
+  /// Si el libro no tiene .chapters.json al lado (importado solo, via WhatsApp/Drive, o
+  /// bajado de internet), lo arma desde la metadata del propio archivo: nuestro JSON
+  /// embebido, o titulo + capitulos estandar de otras herramientas. Se hace una vez.
+  Future<void> _ensureSidecar(File book) async {
+    // MP3/OGG/FLAC: se reproducen sin capitulos
+    if (!isMp4Audio(book.path)) return;
+    final sidecar = File('${book.path}.chapters.json');
     if (await sidecar.exists()) return;
     try {
-      final json = await Mp4Metadata.readSyncJson(m4b);
-      if (json != null) await sidecar.writeAsString(json);
+      final meta = await Mp4Metadata.readBookMeta(book);
+      if (meta != null) await sidecar.writeAsString(jsonEncode(meta));
     } catch (_) {
-      // archivo no-MP4 o sin metadata: el libro se reproduce igual, sin capitulos
+      // metadata ilegible: el libro se reproduce igual, sin capitulos
     }
   }
 
@@ -145,17 +148,23 @@ class LibraryService {
   /// Nombre de archivo que manda el servidor, sin directorios.
   String _safeName(String name) => name.split(RegExp(r'[/\\]')).last;
 
-  Future<Book?> importFromPicker() async {
-    // FileType.any (en vez de custom+allowedExtensions): algunos proveedores
-    // (WhatsApp, Drive) no reportan bien la extension/MIME de un .m4b y el
-    // filtro estricto los deja afuera del selector. Validamos nosotros.
-    final result = await FilePicker.platform.pickFiles(type: FileType.any);
+  /// Por defecto el selector muestra solo formatos de audiolibro. Algun proveedor
+  /// (Drive, WhatsApp) puede reportar mal el tipo de un archivo y esconderlo: para eso
+  /// esta [showAll], que la biblioteca ofrece si el usuario cancela sin elegir.
+  Future<Book?> importFromPicker({bool showAll = false}) async {
+    final result = showAll
+        ? await FilePicker.platform.pickFiles(type: FileType.any)
+        : await FilePicker.platform.pickFiles(
+            type: FileType.custom,
+            allowedExtensions: audioExtensions,
+          );
     if (result == null || result.files.single.path == null) return null;
 
     final source = File(result.files.single.path!);
-    if (!source.path.toLowerCase().endsWith('.m4b')) {
+    if (!isSupportedAudio(source.path)) {
       throw Exception(
-        'Elegiste "${source.uri.pathSegments.last}", que no es un .m4b',
+        'Elegiste "${source.uri.pathSegments.last}", que no es un audiolibro '
+        '(${audioExtensions.map((e) => '.$e').join(', ')})',
       );
     }
 

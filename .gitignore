@@ -12,3 +12,4 @@ web/uploads/
 .pytest_cache/
 *.mp3
 .playwright-mcp/
+web/cache/

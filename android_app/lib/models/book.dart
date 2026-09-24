@@ -28,7 +28,8 @@ class Book {
 
   static Future<Book> fromFile(File file) async {
     final sidecar = File('${file.path}.chapters.json');
-    var title = file.uri.pathSegments.last.replaceAll('.m4b', '');
+    var title = Uri.decodeComponent(file.uri.pathSegments.last)
+        .replaceFirst(RegExp(r'\.[^.]+$'), '');
     var chapters = <Chapter>[];
     var sentences = <Sentence>[];
 
