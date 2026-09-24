@@ -11,13 +11,21 @@ class Mp4Metadata {
   static Future<String?> readSyncJson(File file) async {
     final moov = await _readTopLevelBox(file, 'moov');
     if (moov == null) return null;
-    final meta = _child(_child(moov, 'udta') ?? Uint8List(0), 'meta') ?? _child(moov, 'meta');
+    final meta =
+        _child(_child(moov, 'udta') ?? Uint8List(0), 'meta') ??
+        _child(moov, 'meta');
     if (meta == null || meta.length < 4) return null;
-    final ilst = _child(Uint8List.sublistView(meta, 4), 'ilst'); // meta es full box
+    final ilst = _child(
+      Uint8List.sublistView(meta, 4),
+      'ilst',
+    ); // meta es full box
     final lyr = ilst == null ? null : _child(ilst, '©lyr');
     final data = lyr == null ? null : _child(lyr, 'data');
     if (data == null || data.length < 8) return null;
-    return utf8.decode(Uint8List.sublistView(data, 8), allowMalformed: true); // 8 = tipo + locale
+    return utf8.decode(
+      Uint8List.sublistView(data, 8),
+      allowMalformed: true,
+    ); // 8 = tipo + locale
   }
 
   /// El moov puede estar al final del archivo (ffmpeg sin faststart): se recorren

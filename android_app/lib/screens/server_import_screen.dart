@@ -4,12 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/chapter.dart';
+import '../services/generation_service.dart';
 import '../services/library_service.dart';
-
-class _JobFailed implements Exception {
-  final String message;
-  _JobFailed(this.message);
-}
 
 class ServerImportScreen extends StatefulWidget {
   const ServerImportScreen({super.key});
@@ -49,10 +45,14 @@ class _ServerImportScreenState extends State<ServerImportScreen>
 
   Future<void> _saveUrl() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefKey, _urlController.text.trim().replaceAll(RegExp(r'/$'), ''));
+    await prefs.setString(
+      _prefKey,
+      _urlController.text.trim().replaceAll(RegExp(r'/$'), ''),
+    );
   }
 
-  String get _baseUrl => _urlController.text.trim().replaceAll(RegExp(r'/$'), '');
+  String get _baseUrl =>
+      _urlController.text.trim().replaceAll(RegExp(r'/$'), '');
 
   @override
   Widget build(BuildContext context) {
@@ -138,7 +138,9 @@ class _DownloadTabState extends State<_DownloadTab> {
       _error = null;
     });
     try {
-      final books = await widget.service.fetchServerLibrary(widget.baseUrlGetter());
+      final books = await widget.service.fetchServerLibrary(
+        widget.baseUrlGetter(),
+      );
       if (mounted) setState(() => _books = books);
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -152,13 +154,13 @@ class _DownloadTabState extends State<_DownloadTab> {
     try {
       await widget.service.downloadFromServer(widget.baseUrlGetter(), item);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Descargado: ${item.title}')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Descargado: ${item.title}')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) setState(() => _downloading.remove(item.name));
@@ -175,18 +177,30 @@ class _DownloadTabState extends State<_DownloadTab> {
           ElevatedButton(
             onPressed: _loading ? null : _search,
             child: _loading
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Text('Buscar audiolibros en el servidor'),
           ),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(top: 12),
-              child: Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: Colors.redAccent),
+              ),
             ),
           const SizedBox(height: 16),
           Expanded(
             child: _books.isEmpty
-                ? const Center(child: Text('Sin resultados todavia', style: TextStyle(color: Colors.grey)))
+                ? const Center(
+                    child: Text(
+                      'Sin resultados todavia',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
                 : ListView.builder(
                     itemCount: _books.length,
                     itemBuilder: (context, i) {
@@ -195,10 +209,17 @@ class _DownloadTabState extends State<_DownloadTab> {
                       return Card(
                         child: ListTile(
                           title: Text(book.title),
-                          subtitle: Text('${book.sizeMb} MB · ${chaptersLabel(book.chaptersCount)}'),
+                          subtitle: Text(
+                            '${book.sizeMb} MB · ${chaptersLabel(book.chaptersCount)}',
+                          ),
                           trailing: downloading
                               ? const SizedBox(
-                                  width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
                               : IconButton(
                                   icon: const Icon(Icons.download),
                                   onPressed: () => _download(book),
@@ -230,17 +251,28 @@ class _GenerateTabState extends State<_GenerateTab> {
   File? _selectedFile;
   String _lang = 'auto';
   String _voice = '';
-
-  bool _generating = false;
-  String? _error;
-  String? _stage;
-  int _step = 0;
-  int _total = 5;
+  final _gen = GenerationService.instance;
+  late int _seenCompleted = _gen.completedCount;
 
   @override
   void initState() {
     super.initState();
+    _gen.addListener(_onGenerationChanged);
     _loadCatalog();
+  }
+
+  @override
+  void dispose() {
+    _gen.removeListener(_onGenerationChanged);
+    super.dispose();
+  }
+
+  void _onGenerationChanged() {
+    if (_gen.completedCount != _seenCompleted) {
+      _seenCompleted = _gen.completedCount;
+      _selectedFile = null;
+    }
+    setState(() {});
   }
 
   Future<void> _loadCatalog() async {
@@ -261,86 +293,36 @@ class _GenerateTabState extends State<_GenerateTab> {
       if (file != null && mounted) setState(() => _selectedFile = file);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
 
-  Future<void> _generate() async {
-    if (_selectedFile == null) return;
-    setState(() {
-      _generating = true;
-      _error = null;
-      _stage = 'Subiendo archivo...';
-      _step = 0;
-    });
-
-    final baseUrl = widget.baseUrlGetter();
-    try {
-      final jobId =
-          await widget.service.generateOnServer(baseUrl, _selectedFile!, _lang, _voice);
-      final outName = await _waitForJob(baseUrl, jobId);
-      if (!mounted) return;
-      setState(() => _stage = 'Descargando audiolibro al celular...');
-      final book = await widget.service.downloadGeneratedJob(baseUrl, jobId, outName);
-      if (!mounted) return;
-      setState(() {
-        _generating = false;
-        _selectedFile = null;
-      });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Audiolibro generado: ${book.title}')));
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _generating = false;
-        _error = e is _JobFailed ? e.message : 'Error: $e';
-      });
-    }
-  }
-
-  /// Consulta el job de a una por vez (nunca dos pedidos en vuelo: con Timer.periodic
-  /// dos respuestas "done" solapadas descargaban el mismo archivo en paralelo).
-  /// Tolera cortes breves de red antes de rendirse. Devuelve el nombre del M4B.
-  Future<String> _waitForJob(String baseUrl, String jobId) async {
-    var consecutiveErrors = 0;
-    while (mounted) {
-      await Future.delayed(const Duration(seconds: 1));
-      final Map<String, dynamic> job;
-      try {
-        job = await widget.service.fetchJobStatus(baseUrl, jobId);
-        consecutiveErrors = 0;
-      } catch (_) {
-        if (++consecutiveErrors >= 10) {
-          throw _JobFailed('Se perdio la conexion con el servidor');
-        }
-        continue;
-      }
-      if (!mounted) break;
-      setState(() {
-        _stage = job['stage'] as String?;
-        _step = job['step'] as int? ?? 0;
-        _total = job['total'] as int? ?? 5;
-      });
-      if (job['status'] == 'done') return job['out_name'] as String;
-      if (job['status'] == 'error') {
-        throw _JobFailed(job['error'] as String? ?? 'Fallo la generacion');
-      }
-    }
-    throw _JobFailed('Cancelado');
+  void _generate() {
+    final file = _selectedFile;
+    if (file == null) return;
+    _gen.start(widget.baseUrlGetter(), file, _lang, _voice);
   }
 
   @override
   Widget build(BuildContext context) {
+    final generating = _gen.running;
     if (_catalogError != null) {
       return Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(_catalogError!, style: const TextStyle(color: Colors.redAccent)),
+            Text(
+              _catalogError!,
+              style: const TextStyle(color: Colors.redAccent),
+            ),
             const SizedBox(height: 12),
-            ElevatedButton(onPressed: _loadCatalog, child: const Text('Reintentar')),
+            ElevatedButton(
+              onPressed: _loadCatalog,
+              child: const Text('Reintentar'),
+            ),
           ],
         ),
       );
@@ -358,11 +340,13 @@ class _GenerateTabState extends State<_GenerateTab> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           OutlinedButton.icon(
-            onPressed: _generating ? null : _pickFile,
+            onPressed: generating ? null : _pickFile,
             icon: const Icon(Icons.upload_file),
-            label: Text(_selectedFile == null
-                ? 'Elegir PDF / DOCX / TXT'
-                : _selectedFile!.uri.pathSegments.last),
+            label: Text(
+              _selectedFile == null
+                  ? 'Elegir PDF / DOCX / TXT'
+                  : _selectedFile!.uri.pathSegments.last,
+            ),
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
@@ -370,17 +354,19 @@ class _GenerateTabState extends State<_GenerateTab> {
             isExpanded: true,
             decoration: const InputDecoration(labelText: 'Idioma'),
             items: languages.entries
-                .map((e) => DropdownMenuItem(
-                      value: e.key,
-                      child: Text(e.value, overflow: TextOverflow.ellipsis),
-                    ))
+                .map(
+                  (e) => DropdownMenuItem(
+                    value: e.key,
+                    child: Text(e.value, overflow: TextOverflow.ellipsis),
+                  ),
+                )
                 .toList(),
-            onChanged: _generating
+            onChanged: generating
                 ? null
                 : (v) => setState(() {
-                      _lang = v ?? 'auto';
-                      _voice = '';
-                    }),
+                    _lang = v ?? 'auto';
+                    _voice = '';
+                  }),
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
@@ -389,30 +375,45 @@ class _GenerateTabState extends State<_GenerateTab> {
             decoration: const InputDecoration(labelText: 'Voz'),
             items: [
               const DropdownMenuItem(value: '', child: Text('(por defecto)')),
-              ...voices.map((v) => DropdownMenuItem(
-                    value: v.id,
-                    child: Text(v.label, overflow: TextOverflow.ellipsis),
-                  )),
+              ...voices.map(
+                (v) => DropdownMenuItem(
+                  value: v.id,
+                  child: Text(v.label, overflow: TextOverflow.ellipsis),
+                ),
+              ),
             ],
-            onChanged: (_lang == 'auto' || _generating)
+            onChanged: (_lang == 'auto' || generating)
                 ? null
                 : (v) => setState(() => _voice = v ?? ''),
           ),
           const SizedBox(height: 24),
           ElevatedButton(
-            onPressed: (_selectedFile == null || _generating) ? null : _generate,
+            onPressed: (_selectedFile == null || generating) ? null : _generate,
             child: const Text('Generar audiolibro'),
           ),
-          if (_generating) ...[
+          if (generating) ...[
             const SizedBox(height: 20),
-            LinearProgressIndicator(value: _total > 0 ? _step / _total : null),
+            LinearProgressIndicator(
+              value: _gen.total > 0 ? _gen.step / _gen.total : null,
+            ),
             const SizedBox(height: 8),
-            Text(_stage ?? '...', style: const TextStyle(color: Colors.grey)),
+            Text(
+              _gen.stage ?? '...',
+              style: const TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Podes salir de esta pantalla: cuando termine se descarga solo a tu biblioteca.',
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+            ),
           ],
-          if (_error != null)
+          if (!generating && _gen.error != null)
             Padding(
               padding: const EdgeInsets.only(top: 16),
-              child: Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+              child: Text(
+                _gen.error!,
+                style: const TextStyle(color: Colors.redAccent),
+              ),
             ),
         ],
       ),

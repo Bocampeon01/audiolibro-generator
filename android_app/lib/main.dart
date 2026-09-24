@@ -33,9 +33,7 @@ class AudiolibroApp extends StatelessWidget {
           backgroundColor: Color(0xFF171A21),
           elevation: 0,
         ),
-        cardTheme: const CardThemeData(
-          color: Color(0xFF171A21),
-        ),
+        cardTheme: const CardThemeData(color: Color(0xFF171A21)),
       ),
       home: const LibraryScreen(),
     );

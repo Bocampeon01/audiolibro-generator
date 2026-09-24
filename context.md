@@ -70,14 +70,19 @@ Codigo en `android_app/`. En esta PC el build de Gradle desde Windows esta roto 
 - APK debug ya compilado y probado en emulador (`android14`): conecta al servidor web (poner la URL, `10.0.2.2:8000` en emulador o la IP LAN de la PC en celular fisico), descarga el libro, reproduce con capitulos/resume/velocidad.
 - Tambien se puede importar un `.m4b` directo con el boton "Importar" (file picker), sin pasar por el servidor.
 
-### App Android — reproduccion en segundo plano
-`just_audio_background`: sigue sonando con pantalla apagada o en otra app, notificacion con controles, teclas multimedia/auriculares. El reproductor esta atado a la pantalla del libro: volver a la biblioteca corta el audio (ver pendientes: mini-player).
+### App Android — reproduccion
+- `PlayerController` (singleton) tiene el unico `AudioPlayer`: el audio sigue al volver a la biblioteca, con **mini-player** abajo (titulo, progreso, play/pausa, toque = reproductor completo). Abrir otro libro pausa el anterior (no arranca solo).
+- `just_audio_background`: suena con pantalla apagada o en otra app, notificacion con controles, teclas multimedia/auriculares.
+- **Temporizador para dormir** (icono luna): 5/15/30/45/60 min (solo descuenta mientras suena, baja el volumen los ultimos 10s) o "al terminar este capitulo" (pausa justo en el limite y queda listo para el siguiente).
+- `GenerationService` (singleton): una generacion lanzada desde "Servidor > Generar" sigue aunque se salga de esa pantalla; al terminar se descarga sola y la biblioteca se refresca y avisa.
+
+### Build release (para instalar en el celular)
+En WSL: `flutter build apk --release --split-per-abi` -> `app-arm64-v8a-release.apk` (~20MB, celulares modernos) y `app-armeabi-v7a-release.apk` (~17MB, viejos). Firmado con la clave debug de WSL (sirve para instalar a mano; para Play Store haria falta una clave propia). `android/app/src/main/res/raw/keep.xml` es obligatorio: sin el, el resource shrinking borra los iconos que audio_service busca por nombre y la notificacion/segundo plano fallan solo en release.
 
 ## Pendiente / siguientes pasos
-- [ ] Mini-player persistente (seguir escuchando mientras se navega la biblioteca).
-- [ ] Sleep timer (apagar en X minutos / al terminar capitulo).
-- [ ] Si se sale de la pantalla "Generar" a mitad, el libro queda en el servidor pero no se baja solo (se puede bajar desde "Descargar").
-- [ ] Capitulos con numero en palabras ("Capitulo primero") no se detectan: caen al corte por longitud.
+- [ ] Clave de firma propia (necesaria para Play Store y para actualizar sin desinstalar desde otra PC).
+- [ ] Si Android mata la app mientras genera en segundo plano, ese libro hay que bajarlo a mano desde "Descargar".
+- [ ] Despues de actualizar el codigo Python, reiniciar el servidor (`iniciar_web.bat`): uvicorn no recarga solo.
 - [ ] OCR fallback para PDFs escaneados.
 - [ ] Portada / metadata (autor, titulo) embebida en el M4B.
 - [ ] Probar con documento largo real (libro completo, no solo texto de prueba).

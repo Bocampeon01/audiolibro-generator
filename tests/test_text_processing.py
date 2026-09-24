@@ -72,8 +72,20 @@ def test_headings_in_all_languages():
 
 
 def test_prose_is_not_a_heading():
-    for line in ["Parte di questa storia", "Part civil war story", "Chapter mix of things"]:
+    for line in [
+        "Parte di questa storia", "Part civil war story", "Chapter mix of things",
+        "Parte de la historia", "Chapter one of many things", "Parte y", "parte de la gente que",
+    ]:
         assert not chapters._is_heading(line), line
+
+
+def test_headings_with_numbers_in_words():
+    for heading in [
+        "Capítulo primero", "CAPÍTULO VIGÉSIMO PRIMERO", "Capítulo treinta y uno",
+        "Chapter Twenty-One", "Chapter One: The Start", "Chapitre dix-sept",
+        "Capitolo terzo", "Kapitel zwei", "Parte segunda — La vuelta",
+    ]:
+        assert chapters._is_heading(heading), heading
 
 
 # --- extract -----------------------------------------------------------------

@@ -19,6 +19,13 @@ class Book {
 
   String get id => filePath;
 
+  Chapter? chapterAt(Duration position) {
+    for (final ch in chapters) {
+      if (position >= ch.start && position < ch.end) return ch;
+    }
+    return null;
+  }
+
   static Future<Book> fromFile(File file) async {
     final sidecar = File('${file.path}.chapters.json');
     var title = file.uri.pathSegments.last.replaceAll('.m4b', '');
@@ -27,7 +34,8 @@ class Book {
 
     if (await sidecar.exists()) {
       try {
-        final data = jsonDecode(await sidecar.readAsString()) as Map<String, dynamic>;
+        final data =
+            jsonDecode(await sidecar.readAsString()) as Map<String, dynamic>;
         title = (data['title'] as String?) ?? title;
         chapters = (data['chapters'] as List<dynamic>? ?? [])
             .map((c) => Chapter.fromJson(c as Map<String, dynamic>))
@@ -40,6 +48,11 @@ class Book {
       }
     }
 
-    return Book(filePath: file.path, title: title, chapters: chapters, sentences: sentences);
+    return Book(
+      filePath: file.path,
+      title: title,
+      chapters: chapters,
+      sentences: sentences,
+    );
   }
 }

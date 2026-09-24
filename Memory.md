@@ -64,3 +64,11 @@ Pedido: analizar generador y reproductor, buscar errores y mejorar. Cada bug se 
 - Sin reproduccion en segundo plano. Ahora `just_audio_background` (MainActivity extiende AudioServiceActivity, servicio mediaPlayback en manifest). Verificado: con pantalla apagada llego al final (position=24431 de 24.4s), notificacion con controles, tecla MEDIA_PLAY funciona.
 - Archivo corrupto -> spinner infinito (ahora mensaje), libro terminado reabria al final (ahora 0), borrar sin confirmar (ahora dialogo), "1 capitulos".
 **Tests:** 20 pytest (texto, seguridad web, integracion Piper+ffmpeg que valida JSON embebido == sidecar) + 3 flutter test (parser MP4 sobre fixture real). Tip automatizacion emulador: helper que toca nodos por texto via uiautomator (en scratchpad), mucho mas confiable que coordenadas de screenshots.
+
+## 2026-09-24 (continuacion) — Pendientes cerrados + release 1.1.0
+- **Mini-player**: reproductor movido a `PlayerController` singleton (antes vivia en la pantalla y se cortaba al volver). Bug encontrado probando: abrir otro libro heredaba el estado "playing" y arrancaba solo -> ahora `open()` pausa primero.
+- **Sleep timer**: minutos (descuenta solo sonando, fade 10s) o fin de capitulo (detecta el cruce avanzando, no seeks manuales). Verificado: pauso en 13.37s = fin exacto del cap. 1. Nota de testing: `uiautomator dump` tarda varios segundos mientras la UI anima (parecia que el timer descontaba de mas; midiendo con pausa por tecla dio exacto).
+- **Generacion en segundo plano**: `GenerationService` singleton. Verificado: salir de "Generar" a mitad y el libro aparece solo en la biblioteca ~6s despues.
+- **Capitulos con numeros en palabras**: lista cerrada de numerales cardinales/ordinales (incl. femeninos: "Parte segunda") en 6 idiomas. Falso "1 capitulo" durante la prueba = server con codigo viejo en memoria (uvicorn sin reload): reiniciar el server tras cambiar Python.
+- **Release**: `--split-per-abi` -> 20MB arm64 (vs 156MB debug). Bug solo-release encontrado: sin `res/raw/keep.xml` el resource shrinking borra los iconos de audio_service -> "You must specify an icon resource id to build a CustomAction", sin notificacion ni sesion multimedia. Con keep.xml verificado en release x86_64: segundo plano, notificacion, servidor, catalogo, selector OK.
+- Version app 1.1.0+2. APKs publicados en GitHub Release v1.1.0.

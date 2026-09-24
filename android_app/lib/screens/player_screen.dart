@@ -1,14 +1,11 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../models/book.dart';
 import '../models/chapter.dart';
 import '../models/sentence.dart';
-import '../services/playback_position_service.dart';
+import '../services/player_controller.dart';
 
 class PlayerScreen extends StatefulWidget {
   final Book book;
@@ -20,75 +17,21 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  final _player = AudioPlayer();
-  final _positionService = PlaybackPositionService();
+  final _controller = PlayerController.instance;
   final _itemScrollController = ItemScrollController();
   final Map<Chapter?, List<Sentence>> _sentencesByChapter = {};
-  Timer? _saveTimer;
-  double _speed = 1.0;
-  bool _ready = false;
-  String? _loadError;
   bool _showText = false;
   Duration? _highlightedStart;
 
-  // Guardar una posicion a menos de esto del final = libro terminado: al reabrir
-  // arranca de cero en vez de "reproducir" los ultimos segundos.
-  static const _finishedThreshold = Duration(seconds: 5);
   static const _speeds = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+
+  AudioPlayer get _player => _controller.player;
 
   @override
   void initState() {
     super.initState();
-    _init();
-  }
-
-  Future<void> _init() async {
-    try {
-      // tag MediaItem: lo usa just_audio_background para la notificacion y la
-      // pantalla de bloqueo; el audio sigue con la pantalla apagada o en otra app.
-      await _player.setAudioSource(AudioSource.file(
-        widget.book.filePath,
-        tag: MediaItem(id: widget.book.id, title: widget.book.title, album: 'Audiolibro'),
-      ));
-    } catch (e) {
-      if (mounted) setState(() => _loadError = 'No se pudo abrir el audiolibro: $e');
-      return;
-    }
-    _speed = await _positionService.loadSpeed();
-    await _player.setSpeed(_speed);
-
-    final savedPosition = await _positionService.loadPosition(widget.book.id);
-    if (savedPosition != null) {
-      await _player.seek(savedPosition);
-    }
-
-    _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) => _savePosition());
-    if (mounted) setState(() => _ready = true);
-  }
-
-  void _savePosition() {
-    if (!_ready) return;
-    final duration = _player.duration;
-    var position = _player.position;
-    if (duration != null && duration - position < _finishedThreshold) {
-      position = Duration.zero;
-    }
-    _positionService.savePosition(widget.book.id, position);
-  }
-
-  @override
-  void dispose() {
-    _saveTimer?.cancel();
-    _savePosition();
-    _player.dispose();
-    super.dispose();
-  }
-
-  Chapter? _currentChapter(Duration position) {
-    for (final ch in widget.book.chapters) {
-      if (position >= ch.start && position < ch.end) return ch;
-    }
-    return null;
+    // Si este libro ya estaba sonando (se volvio desde el mini-player) no se recarga.
+    _controller.open(widget.book);
   }
 
   List<Sentence> _sentencesForChapter(Chapter? chapter) {
@@ -132,8 +75,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
           shrinkWrap: true,
           children: widget.book.chapters.map((ch) {
             return ListTile(
-              title: Text(ch.title, style: const TextStyle(color: Colors.white)),
-              subtitle: Text(_fmt(ch.start), style: const TextStyle(color: Colors.grey)),
+              title: Text(
+                ch.title,
+                style: const TextStyle(color: Colors.white),
+              ),
+              subtitle: Text(
+                _fmt(ch.start),
+                style: const TextStyle(color: Colors.grey),
+              ),
               onTap: () {
                 _player.seek(ch.start);
                 Navigator.pop(ctx);
@@ -145,16 +94,86 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
+  void _showSleepTimer() {
+    final active =
+        _controller.sleepRemaining != null || _controller.sleepAtChapterEnd;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF171A21),
+      builder: (ctx) {
+        void pick(VoidCallback action) {
+          action();
+          Navigator.pop(ctx);
+        }
+
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(
+                title: Text(
+                  'Temporizador para dormir',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: Text(
+                  'Pausa sola (bajando el volumen al final). Solo cuenta mientras suena.',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+              for (final minutes in const [5, 15, 30, 45, 60])
+                ListTile(
+                  leading: const Icon(Icons.timer_outlined),
+                  title: Text(
+                    '$minutes minutos',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  onTap: () => pick(
+                    () => _controller.setSleepTimer(Duration(minutes: minutes)),
+                  ),
+                ),
+              if (widget.book.chapters.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.bookmark_outline),
+                  title: const Text(
+                    'Al terminar este capitulo',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () => pick(_controller.setSleepAtChapterEnd),
+                ),
+              if (active)
+                ListTile(
+                  leading: const Icon(
+                    Icons.timer_off_outlined,
+                    color: Colors.redAccent,
+                  ),
+                  title: const Text(
+                    'Cancelar temporizador',
+                    style: TextStyle(color: Colors.redAccent),
+                  ),
+                  onTap: () => pick(_controller.cancelSleep),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildTextPanel(Duration position, Chapter? chapter) {
     final sentences = _sentencesForChapter(chapter);
     if (sentences.isEmpty) {
       return const Center(
-        child: Text('Sin texto para este capitulo', style: TextStyle(color: Colors.grey)),
+        child: Text(
+          'Sin texto para este capitulo',
+          style: TextStyle(color: Colors.grey),
+        ),
       );
     }
 
     final currentIndex = _currentSentenceIndex(sentences, position);
-    final currentStart = currentIndex == -1 ? null : sentences[currentIndex].start;
+    final currentStart = currentIndex == -1
+        ? null
+        : sentences[currentIndex].start;
     if (currentStart != null && currentStart != _highlightedStart) {
       _highlightedStart = currentStart;
       // ItemScrollController llega a items que la lista todavia no construyo
@@ -198,28 +217,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
-  Widget _buildControls(Duration position, Duration duration, Chapter? chapter) {
+  Widget _buildControls(
+    Duration position,
+    Duration duration,
+    Chapter? chapter,
+  ) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (chapter != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text(chapter.title, style: const TextStyle(color: Colors.grey)),
+            child: Text(
+              chapter.title,
+              style: const TextStyle(color: Colors.grey),
+            ),
           ),
         Slider(
           value: position.inMilliseconds
-              .clamp(0, duration.inMilliseconds == 0 ? 1 : duration.inMilliseconds)
+              .clamp(
+                0,
+                duration.inMilliseconds == 0 ? 1 : duration.inMilliseconds,
+              )
               .toDouble(),
-          max: duration.inMilliseconds == 0 ? 1 : duration.inMilliseconds.toDouble(),
+          max: duration.inMilliseconds == 0
+              ? 1
+              : duration.inMilliseconds.toDouble(),
           onChanged: (v) => _player.seek(Duration(milliseconds: v.toInt())),
         ),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(_fmt(position)),
-            Text(_fmt(duration)),
-          ],
+          children: [Text(_fmt(position)), Text(_fmt(duration))],
         ),
         const SizedBox(height: 16),
         Row(
@@ -227,8 +255,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
           children: [
             IconButton(
               iconSize: 36,
+              tooltip: 'Atrasar 10 segundos',
               icon: const Icon(Icons.replay_10),
-              onPressed: () => _player.seek(_player.position - const Duration(seconds: 10)),
+              onPressed: () =>
+                  _player.seek(_player.position - const Duration(seconds: 10)),
             ),
             const SizedBox(width: 16),
             StreamBuilder<PlayerState>(
@@ -236,34 +266,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
               builder: (context, snap) {
                 final state = snap.data;
                 final playing = state?.playing ?? false;
-                final completed = state?.processingState == ProcessingState.completed;
+                final completed =
+                    state?.processingState == ProcessingState.completed;
                 return IconButton(
                   iconSize: 64,
+                  tooltip: completed
+                      ? 'Volver a empezar'
+                      : (playing ? 'Pausar' : 'Reproducir'),
                   icon: Icon(
                     completed
                         ? Icons.replay_circle_filled
                         : playing
-                            ? Icons.pause_circle_filled
-                            : Icons.play_circle_filled,
+                        ? Icons.pause_circle_filled
+                        : Icons.play_circle_filled,
                   ),
-                  onPressed: () async {
-                    if (completed) {
-                      await _player.seek(Duration.zero);
-                      await _player.play();
-                    } else if (playing) {
-                      await _player.pause();
-                    } else {
-                      await _player.play();
-                    }
-                  },
+                  onPressed: _controller.togglePlay,
                 );
               },
             ),
             const SizedBox(width: 16),
             IconButton(
               iconSize: 36,
+              tooltip: 'Adelantar 30 segundos',
               icon: const Icon(Icons.forward_30),
-              onPressed: () => _player.seek(_player.position + const Duration(seconds: 30)),
+              onPressed: () =>
+                  _player.seek(_player.position + const Duration(seconds: 30)),
             ),
           ],
         ),
@@ -272,15 +299,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             DropdownButton<double>(
-              value: _speed,
-              items: _speeds.map((s) => DropdownMenuItem(value: s, child: Text('${s}x'))).toList(),
-              onChanged: (v) async {
-                if (v == null) return;
-                setState(() => _speed = v);
-                await _player.setSpeed(v);
-                await _positionService.saveSpeed(v);
+              value: _controller.speed,
+              items: _speeds
+                  .map((s) => DropdownMenuItem(value: s, child: Text('${s}x')))
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) _controller.setSpeed(v);
               },
             ),
+            _SleepButton(onPressed: _showSleepTimer),
             if (widget.book.chapters.isNotEmpty)
               TextButton.icon(
                 onPressed: _showChapters,
@@ -294,15 +321,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Widget _buildBody() {
-    if (_loadError != null) {
+    if (_controller.book?.id != widget.book.id || _controller.loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_controller.loadError != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(_loadError!, style: const TextStyle(color: Colors.redAccent)),
+          child: Text(
+            _controller.loadError!,
+            style: const TextStyle(color: Colors.redAccent),
+          ),
         ),
       );
     }
-    if (!_ready) return const Center(child: CircularProgressIndicator());
 
     return StreamBuilder<Duration?>(
       stream: _player.durationStream,
@@ -312,7 +344,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           stream: _player.positionStream,
           builder: (context, positionSnap) {
             final position = positionSnap.data ?? Duration.zero;
-            final chapter = _currentChapter(position);
+            final chapter = widget.book.chapterAt(position);
             if (_showText) {
               return Column(
                 children: [
@@ -325,7 +357,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               );
             }
             return Center(
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: _buildControls(position, duration, chapter),
               ),
@@ -338,22 +370,60 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.book.title, overflow: TextOverflow.ellipsis),
-        actions: [
-          if (widget.book.sentences.isNotEmpty)
-            IconButton(
-              icon: Icon(_showText ? Icons.article : Icons.article_outlined),
-              tooltip: 'Seguir el texto mientras escuchas',
-              onPressed: () => setState(() {
-                _showText = !_showText;
-                _highlightedStart = null;
-              }),
-            ),
-        ],
+    return ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) => Scaffold(
+        appBar: AppBar(
+          title: Text(widget.book.title, overflow: TextOverflow.ellipsis),
+          actions: [
+            if (widget.book.sentences.isNotEmpty)
+              IconButton(
+                icon: Icon(_showText ? Icons.article : Icons.article_outlined),
+                tooltip: 'Seguir el texto mientras escuchas',
+                onPressed: () => setState(() {
+                  _showText = !_showText;
+                  _highlightedStart = null;
+                }),
+              ),
+          ],
+        ),
+        body: _buildBody(),
       ),
-      body: _buildBody(),
+    );
+  }
+}
+
+/// Icono de temporizador; muestra el tiempo restante cuando esta activo.
+class _SleepButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _SleepButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = PlayerController.instance;
+    final remaining = c.sleepRemaining;
+    final String? label;
+    if (c.sleepAtChapterEnd) {
+      label = 'Fin cap.';
+    } else if (remaining != null) {
+      final m = remaining.inMinutes.toString().padLeft(2, '0');
+      final s = remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
+      label = '$m:$s';
+    } else {
+      label = null;
+    }
+    if (label == null) {
+      return IconButton(
+        tooltip: 'Temporizador para dormir',
+        icon: const Icon(Icons.bedtime_outlined),
+        onPressed: onPressed,
+      );
+    }
+    return TextButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.bedtime),
+      label: Text(label),
     );
   }
 }

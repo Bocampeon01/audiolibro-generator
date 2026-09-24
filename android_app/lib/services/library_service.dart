@@ -45,7 +45,10 @@ class VoiceOption {
   VoiceOption({required this.id, required this.label});
 
   factory VoiceOption.fromJson(Map<String, dynamic> json) {
-    return VoiceOption(id: json['id'] as String, label: json['label'] as String);
+    return VoiceOption(
+      id: json['id'] as String,
+      label: json['label'] as String,
+    );
   }
 }
 
@@ -56,12 +59,15 @@ class VoiceCatalog {
   VoiceCatalog({required this.languages, required this.voices});
 
   factory VoiceCatalog.fromJson(Map<String, dynamic> json) {
-    final languages = (json['languages'] as Map<String, dynamic>)
-        .map((k, v) => MapEntry(k, v as String));
+    final languages = (json['languages'] as Map<String, dynamic>).map(
+      (k, v) => MapEntry(k, v as String),
+    );
     final voices = (json['voices'] as Map<String, dynamic>).map(
       (k, v) => MapEntry(
         k,
-        (v as List<dynamic>).map((e) => VoiceOption.fromJson(e as Map<String, dynamic>)).toList(),
+        (v as List<dynamic>)
+            .map((e) => VoiceOption.fromJson(e as Map<String, dynamic>))
+            .toList(),
       ),
     );
     return VoiceCatalog(languages: languages, voices: voices);
@@ -80,12 +86,15 @@ class LibraryService {
 
   Future<List<Book>> listBooks() async {
     final dir = await libraryDir();
-    final files = dir
-        .listSync()
-        .whereType<File>()
-        .where((f) => f.path.endsWith('.m4b'))
-        .toList()
-      ..sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+    final files =
+        dir
+            .listSync()
+            .whereType<File>()
+            .where((f) => f.path.endsWith('.m4b'))
+            .toList()
+          ..sort(
+            (a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()),
+          );
     final books = <Book>[];
     for (final file in files) {
       await _ensureSidecar(file);
@@ -145,7 +154,9 @@ class LibraryService {
 
     final source = File(result.files.single.path!);
     if (!source.path.toLowerCase().endsWith('.m4b')) {
-      throw Exception('Elegiste "${source.uri.pathSegments.last}", que no es un .m4b');
+      throw Exception(
+        'Elegiste "${source.uri.pathSegments.last}", que no es un .m4b',
+      );
     }
 
     final dir = await libraryDir();
@@ -154,7 +165,9 @@ class LibraryService {
     // file_picker copia el archivo elegido a la cache de la app: se libera, y el
     // .chapters.json de al lado nunca llega (por eso se lee el embebido).
     await FilePicker.platform.clearTemporaryFiles();
-    final staleSidecar = File('$destPath.chapters.json'); // de un import previo con mismo nombre
+    final staleSidecar = File(
+      '$destPath.chapters.json',
+    ); // de un import previo con mismo nombre
     if (await staleSidecar.exists()) await staleSidecar.delete();
     await _ensureSidecar(dest);
 
@@ -167,13 +180,18 @@ class LibraryService {
       throw Exception('Servidor respondio ${res.statusCode}');
     }
     final list = jsonDecode(res.body) as List<dynamic>;
-    return list.map((e) => ServerBook.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => ServerBook.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<Book> downloadFromServer(String baseUrl, ServerBook item) async {
     final dir = await libraryDir();
     final destPath = '${dir.path}/${_safeName(item.name)}';
-    final dest = await _downloadTo(Uri.parse('$baseUrl${item.downloadUrl}'), destPath);
+    final dest = await _downloadTo(
+      Uri.parse('$baseUrl${item.downloadUrl}'),
+      destPath,
+    );
     await _saveServerMeta(Uri.parse('$baseUrl${item.metaUrl}'), dest);
     return Book.fromFile(dest);
   }
@@ -209,17 +227,27 @@ class LibraryService {
     if (result == null || result.files.single.path == null) return null;
     final file = File(result.files.single.path!);
     final ext = file.path.toLowerCase();
-    if (!ext.endsWith('.pdf') && !ext.endsWith('.docx') && !ext.endsWith('.txt')) {
-      throw Exception('Elegiste "${file.uri.pathSegments.last}", que no es PDF/DOCX/TXT');
+    if (!ext.endsWith('.pdf') &&
+        !ext.endsWith('.docx') &&
+        !ext.endsWith('.txt')) {
+      throw Exception(
+        'Elegiste "${file.uri.pathSegments.last}", que no es PDF/DOCX/TXT',
+      );
     }
     return file;
   }
 
-  Future<String> generateOnServer(String baseUrl, File file, String lang, String voice) async {
-    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/api/generate'))
-      ..fields['lang'] = lang
-      ..fields['voice'] = voice
-      ..files.add(await http.MultipartFile.fromPath('file', file.path));
+  Future<String> generateOnServer(
+    String baseUrl,
+    File file,
+    String lang,
+    String voice,
+  ) async {
+    final request =
+        http.MultipartRequest('POST', Uri.parse('$baseUrl/api/generate'))
+          ..fields['lang'] = lang
+          ..fields['voice'] = voice
+          ..files.add(await http.MultipartFile.fromPath('file', file.path));
 
     final streamed = await request.send();
     final res = await http.Response.fromStream(streamed);
@@ -230,7 +258,10 @@ class LibraryService {
     return data['job_id'] as String;
   }
 
-  Future<Map<String, dynamic>> fetchJobStatus(String baseUrl, String jobId) async {
+  Future<Map<String, dynamic>> fetchJobStatus(
+    String baseUrl,
+    String jobId,
+  ) async {
     final res = await http.get(Uri.parse('$baseUrl/api/jobs/$jobId'));
     if (res.statusCode != 200) {
       throw Exception('No se encontro el trabajo en el servidor');
@@ -238,7 +269,11 @@ class LibraryService {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
-  Future<Book> downloadGeneratedJob(String baseUrl, String jobId, String outName) async {
+  Future<Book> downloadGeneratedJob(
+    String baseUrl,
+    String jobId,
+    String outName,
+  ) async {
     final dir = await libraryDir();
     final name = _safeName(outName);
     final dest = await _downloadTo(
