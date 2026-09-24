@@ -9,8 +9,47 @@ const progressFill = document.getElementById("progress-fill");
 const progressText = document.getElementById("progress-text");
 const resultBox = document.getElementById("result-box");
 const libraryList = document.getElementById("library-list");
+const langSelect = document.getElementById("lang-select");
+const voiceSelect = document.getElementById("voice-select");
 
 let selectedFile = null;
+let voiceCatalog = {};
+
+async function loadVoices() {
+  const res = await fetch("/api/voices");
+  const data = await res.json();
+  voiceCatalog = data.voices;
+  for (const [code, name] of Object.entries(data.languages)) {
+    const opt = document.createElement("option");
+    opt.value = code;
+    opt.textContent = name;
+    langSelect.appendChild(opt);
+  }
+}
+
+function updateVoiceOptions() {
+  const lang = langSelect.value;
+  voiceSelect.innerHTML = "";
+  if (lang === "auto") {
+    voiceSelect.disabled = true;
+    voiceSelect.innerHTML = `<option value="">(auto)</option>`;
+    return;
+  }
+  voiceSelect.disabled = false;
+  const defaultOpt = document.createElement("option");
+  defaultOpt.value = "";
+  defaultOpt.textContent = "(voz por defecto)";
+  voiceSelect.appendChild(defaultOpt);
+  for (const voice of voiceCatalog[lang] || []) {
+    const opt = document.createElement("option");
+    opt.value = voice.id;
+    opt.textContent = voice.label;
+    voiceSelect.appendChild(opt);
+  }
+}
+
+langSelect.addEventListener("change", updateVoiceOptions);
+loadVoices();
 
 dropzone.addEventListener("click", () => fileInput.click());
 dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("dragover"); });
@@ -42,10 +81,12 @@ form.addEventListener("submit", async (e) => {
     return;
   }
 
-  const lang = document.getElementById("lang-select").value;
+  const lang = langSelect.value;
+  const voice = voiceSelect.value;
   const formData = new FormData();
   formData.append("file", selectedFile);
   formData.append("lang", lang);
+  formData.append("voice", voice);
 
   generateBtn.disabled = true;
   resultBox.classList.add("hidden");

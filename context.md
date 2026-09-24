@@ -5,8 +5,8 @@ App que convierte documentos (PDF, DOC/DOCX, TXT) en audiolibros usando TTS (tex
 
 ## Alcance fase 1 (idiomas)
 - Detectar idioma del documento fuente automaticamente.
-- Soporte inicial: **español** e **ingles**.
-- Arquitectura pensada para agregar 1 idioma nuevo por vez (no acoplar pipeline a 2 idiomas fijos).
+- Soportados: **español, ingles, portugues (BR), frances, italiano, aleman**.
+- 2 voces por idioma para elegir (ver `src/audiolibro/detect_lang.py::VOICES`). Agregar idioma nuevo = agregar entradas ahi + bajar los modelos Piper correspondientes.
 
 ## Pipeline (generacion)
 1. Ingesta: PDF / DOC / DOCX / TXT.
@@ -29,21 +29,27 @@ Decision default: **M4B con capitulos embebidos**, fallback MP3+ID3 si hay probl
 - Evaluar: reproductor propio (Kotlin + Media3/ExoPlayer, que soporta M4B y capitulos) vs. simplemente generar el archivo y que el usuario use un player existente (mas rapido, menos control de UX).
 
 ## Decisiones tomadas
-- Motor TTS: **Piper** (local/offline, gratis). Voces: `es_ES-davefx-medium`, `en_US-lessac-medium`.
+- Motor TTS: **Piper** (local/offline, gratis). 2 voces por idioma (`detect_lang.VOICES`), elegibles en la web y por CLI (`--voice`).
 - Fase 1: primero validar el pipeline de generacion (CLI/script), recien despues decidir si se envuelve en web app o app de escritorio.
 - Android (fase 2): arrancar con **Flutter**, evaluar despues si conviene pasar a nativo.
 - Formato salida: **M4B** con capitulos embebidos via ffmpeg (confirmado funcionando).
+- Sincronizacion de texto: por **oracion** (no por palabra) — se sintetiza cada oracion por separado y se mide su duracion real, no se usa alineacion fonema-por-fonema de Piper (mas fragil).
 
 ## Estado actual (implementado)
 Pipeline CLI funcional en `src/audiolibro/`:
 - `extract.py` — texto desde PDF (pypdf) / DOCX (python-docx) / TXT. OCR para PDF escaneado: pendiente.
-- `detect_lang.py` — deteccion de idioma (langdetect), soporta es/en, mapea a voz Piper.
-- `chapters.py` — segmentacion en capitulos (detecta "Capitulo/Chapter/Parte N", fallback por longitud).
-- `tts_piper.py` — sintesis de audio offline con Piper.
-- `build_m4b.py` — empaqueta wavs de capitulos en un M4B con capitulos embebidos (ffmpeg).
-- `pipeline.py` — CLI: `python -m audiolibro.pipeline entrada.pdf --out output/libro.m4b`
+- `detect_lang.py` — deteccion de idioma (langdetect) + catalogo de voces Piper por idioma (`VOICES`).
+- `chapters.py` — segmentacion en capitulos (detecta "Capitulo/Chapter/Chapitre/Capitolo/Kapitel/Parte N", fallback por longitud).
+- `sentences.py` — segmentacion en oraciones (regex sobre puntuacion latina, con corte de emergencia para oraciones muy largas).
+- `wav_utils.py` — concatenar wavs (copia de frames PCM, sin reencode) y medir duracion.
+- `tts_piper.py` — sintesis de audio offline con Piper, una llamada por oracion.
+- `build_m4b.py` — concatena oraciones en wav de capitulo, capitulos en M4B (ffmpeg), y escribe el sidecar `<libro>.m4b.chapters.json` con `{title, chapters, sentences}` (sentences en tiempo absoluto del libro, con el texto de cada una — para el "seguir texto" de la app).
+- `pipeline.py` — CLI: `python -m audiolibro.pipeline entrada.pdf --out output/libro.m4b [--lang es] [--voice es_AR-daniela-high]`
 
-Probado end-to-end con muestras es/en (`samples/`), capitulos verificados con ffprobe. Voces (~60MB c/u) en `voices/`, no versionadas (`.gitignore`).
+Probado end-to-end en es/en/fr con voces variadas, sidecar de oraciones verificado (offsets correctos entre capitulos). Voces (~60-100MB c/u) en `voices/`, no versionadas (`.gitignore`).
+
+### App Android — texto sincronizado
+`PlayerScreen` tiene un boton (icono de articulo, arriba a la derecha, solo visible si el libro tiene `sentences`) que muestra un panel de texto scrolleable con la oracion actual resaltada, sincronizada con `positionStream` del reproductor. Tocar una oracion salta el audio a ese punto. Probado en emulador: el resaltado avanza en tiempo real con el audio.
 
 ## Como correr y probar
 

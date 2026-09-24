@@ -12,14 +12,16 @@ class ServerBook {
   final String title;
   final double sizeMb;
   final String downloadUrl;
-  final List<Map<String, dynamic>> chapters;
+  final String metaUrl;
+  final int chaptersCount;
 
   ServerBook({
     required this.name,
     required this.title,
     required this.sizeMb,
     required this.downloadUrl,
-    required this.chapters,
+    required this.metaUrl,
+    required this.chaptersCount,
   });
 
   factory ServerBook.fromJson(Map<String, dynamic> json) {
@@ -28,8 +30,8 @@ class ServerBook {
       title: json['title'] as String,
       sizeMb: (json['size_mb'] as num).toDouble(),
       downloadUrl: json['download_url'] as String,
-      chapters: (json['chapters'] as List<dynamic>? ?? [])
-          .cast<Map<String, dynamic>>(),
+      metaUrl: json['meta_url'] as String,
+      chaptersCount: json['chapters_count'] as int? ?? 0,
     );
   }
 }
@@ -103,10 +105,11 @@ class LibraryService {
     final dest = File(destPath);
     await dest.writeAsBytes(res.bodyBytes);
 
-    final sidecar = File('$destPath.chapters.json');
-    await sidecar.writeAsString(
-      jsonEncode({'title': item.title, 'chapters': item.chapters}),
-    );
+    final metaRes = await http.get(Uri.parse('$baseUrl${item.metaUrl}'));
+    if (metaRes.statusCode == 200) {
+      final sidecar = File('$destPath.chapters.json');
+      await sidecar.writeAsString(metaRes.body);
+    }
 
     return Book.fromFile(dest);
   }

@@ -2,13 +2,20 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'chapter.dart';
+import 'sentence.dart';
 
 class Book {
   final String filePath;
   final String title;
   final List<Chapter> chapters;
+  final List<Sentence> sentences;
 
-  const Book({required this.filePath, required this.title, required this.chapters});
+  const Book({
+    required this.filePath,
+    required this.title,
+    required this.chapters,
+    required this.sentences,
+  });
 
   String get id => filePath;
 
@@ -16,6 +23,7 @@ class Book {
     final sidecar = File('${file.path}.chapters.json');
     var title = file.uri.pathSegments.last.replaceAll('.m4b', '');
     var chapters = <Chapter>[];
+    var sentences = <Sentence>[];
 
     if (await sidecar.exists()) {
       try {
@@ -24,11 +32,14 @@ class Book {
         chapters = (data['chapters'] as List<dynamic>? ?? [])
             .map((c) => Chapter.fromJson(c as Map<String, dynamic>))
             .toList();
+        sentences = (data['sentences'] as List<dynamic>? ?? [])
+            .map((s) => Sentence.fromJson(s as Map<String, dynamic>))
+            .toList();
       } catch (_) {
-        // sidecar corrupto o ausente: seguimos sin capitulos
+        // sidecar corrupto o ausente: seguimos sin capitulos/texto
       }
     }
 
-    return Book(filePath: file.path, title: title, chapters: chapters);
+    return Book(filePath: file.path, title: title, chapters: chapters, sentences: sentences);
   }
 }

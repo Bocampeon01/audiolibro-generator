@@ -143,7 +143,7 @@ class _ServerImportScreenState extends State<ServerImportScreen> {
                         return Card(
                           child: ListTile(
                             title: Text(book.title),
-                            subtitle: Text('${book.sizeMb} MB · ${book.chapters.length} capitulos'),
+                            subtitle: Text('${book.sizeMb} MB · ${book.chaptersCount} capitulos'),
                             trailing: downloading
                                 ? const SizedBox(
                                     width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))

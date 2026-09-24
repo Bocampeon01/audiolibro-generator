@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 
 CHAPTER_PATTERN = re.compile(
-    r"^\s*(cap[ií]tulo|chapter|parte|part)\s+([0-9]+|[ivxlcdm]+)\b.*$",
+    r"^\s*(cap[ií]tulo|chapter|parte|part|chapitre|capitolo|kapitel)\s+([0-9]+|[ivxlcdm]+)\b.*$",
     re.IGNORECASE,
 )
 

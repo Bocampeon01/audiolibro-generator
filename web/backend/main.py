@@ -1,4 +1,5 @@
 """Backend web: subis un documento, generamos el audiolibro M4B."""
+import json
 import shutil
 import sys
 import threading
@@ -12,7 +13,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from audiolibro import pipeline
+from audiolibro import detect_lang, pipeline
 
 UPLOADS_DIR = ROOT / "web" / "uploads"
 OUTPUT_DIR = ROOT / "output"
@@ -32,13 +33,13 @@ def _update_job(job_id: str, **fields) -> None:
         jobs[job_id].update(fields)
 
 
-def _run_job(job_id: str, input_path: Path, out_path: Path, lang: str | None) -> None:
+def _run_job(job_id: str, input_path: Path, out_path: Path, lang: str | None, voice_id: str | None) -> None:
     def on_progress(stage: str, step: int, total: int) -> None:
         _update_job(job_id, stage=stage, step=step, total=total)
 
     try:
         _update_job(job_id, status="running")
-        pipeline.run(input_path, out_path, lang, keep_temp=False, on_progress=on_progress)
+        pipeline.run(input_path, out_path, lang, voice_id, keep_temp=False, on_progress=on_progress)
         _update_job(job_id, status="done", stage="Listo", step=5, total=5)
     except Exception as exc:  # noqa: BLE001 - reportar cualquier fallo al cliente
         _update_job(job_id, status="error", error=str(exc))
@@ -46,8 +47,13 @@ def _run_job(job_id: str, input_path: Path, out_path: Path, lang: str | None) ->
         shutil.rmtree(input_path.parent, ignore_errors=True)
 
 
+@app.get("/api/voices")
+def voices():
+    return {"languages": detect_lang.LANG_NAMES, "voices": detect_lang.VOICES}
+
+
 @app.post("/api/generate")
-async def generate(file: UploadFile = File(...), lang: str = Form("auto")):
+async def generate(file: UploadFile = File(...), lang: str = Form("auto"), voice: str = Form("")):
     suffix = Path(file.filename).suffix.lower()
     if suffix not in (".pdf", ".docx", ".txt"):
         raise HTTPException(400, f"Formato no soportado: {suffix}")
@@ -61,6 +67,7 @@ async def generate(file: UploadFile = File(...), lang: str = Form("auto")):
     stem = Path(file.filename).stem
     out_path = OUTPUT_DIR / f"{stem}-{job_id}.m4b"
     lang_value = None if lang == "auto" else lang
+    voice_value = voice or None
 
     with jobs_lock:
         jobs[job_id] = {
@@ -73,7 +80,7 @@ async def generate(file: UploadFile = File(...), lang: str = Form("auto")):
         }
 
     thread = threading.Thread(
-        target=_run_job, args=(job_id, input_path, out_path, lang_value), daemon=True
+        target=_run_job, args=(job_id, input_path, out_path, lang_value, voice_value), daemon=True
     )
     thread.start()
 
@@ -103,23 +110,22 @@ def job_download(job_id: str):
 
 @app.get("/api/library")
 def library():
-    import json
-
     books = []
     for path in sorted(OUTPUT_DIR.glob("*.m4b"), key=lambda p: p.stat().st_mtime, reverse=True):
         sidecar = path.with_suffix(path.suffix + ".chapters.json")
-        chapters = []
+        chapters_count = 0
         title = path.stem
         if sidecar.exists():
             data = json.loads(sidecar.read_text(encoding="utf-8"))
             title = data.get("title", title)
-            chapters = data.get("chapters", [])
+            chapters_count = len(data.get("chapters", []))
         books.append({
             "name": path.name,
             "title": title,
             "size_mb": round(path.stat().st_size / (1024 * 1024), 1),
             "download_url": f"/api/library/{path.name}",
-            "chapters": chapters,
+            "meta_url": f"/api/library/{path.name}/meta",
+            "chapters_count": chapters_count,
         })
     return books
 
@@ -130,6 +136,15 @@ def library_download(filename: str):
     if not out_path.exists() or out_path.suffix != ".m4b":
         raise HTTPException(404, "No encontrado")
     return FileResponse(out_path, media_type="audio/mp4", filename=filename)
+
+
+@app.get("/api/library/{filename}/meta")
+def library_meta(filename: str):
+    out_path = OUTPUT_DIR / filename
+    sidecar = out_path.with_suffix(out_path.suffix + ".chapters.json")
+    if not sidecar.exists():
+        raise HTTPException(404, "No hay metadata para este libro")
+    return json.loads(sidecar.read_text(encoding="utf-8"))
 
 
 app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
