@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,40 +13,127 @@ class ServerImportScreen extends StatefulWidget {
   State<ServerImportScreen> createState() => _ServerImportScreenState();
 }
 
-class _ServerImportScreenState extends State<ServerImportScreen> {
+class _ServerImportScreenState extends State<ServerImportScreen>
+    with SingleTickerProviderStateMixin {
   final _service = LibraryService();
   final _urlController = TextEditingController(text: 'http://10.0.2.2:8000');
-  List<ServerBook> _books = [];
-  String? _error;
-  bool _loading = false;
-  final Set<String> _downloading = {};
+  late final TabController _tabController;
 
   static const _prefKey = 'server_url';
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadSavedUrl();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSavedUrl() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_prefKey);
     if (saved != null) {
-      _urlController.text = saved;
+      setState(() => _urlController.text = saved);
     }
   }
+
+  Future<void> _saveUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefKey, _urlController.text.trim().replaceAll(RegExp(r'/$'), ''));
+  }
+
+  String get _baseUrl => _urlController.text.trim().replaceAll(RegExp(r'/$'), '');
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Servidor'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Descargar'),
+            Tab(text: 'Generar'),
+          ],
+        ),
+      ),
+      body: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              'Esto solo funciona si tu celular esta conectado al mismo WiFi '
+              'que la PC, y la PC tiene la web de audiolibro-generator corriendo '
+              'en ese momento. Si no estas en esa red, no va a conectar.',
+              style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.4),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _urlController,
+                    onChanged: (_) => _saveUrl(),
+                    decoration: const InputDecoration(
+                      labelText: 'URL del servidor',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _DownloadTab(service: _service, baseUrlGetter: () => _baseUrl),
+                _GenerateTab(service: _service, baseUrlGetter: () => _baseUrl),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DownloadTab extends StatefulWidget {
+  final LibraryService service;
+  final String Function() baseUrlGetter;
+
+  const _DownloadTab({required this.service, required this.baseUrlGetter});
+
+  @override
+  State<_DownloadTab> createState() => _DownloadTabState();
+}
+
+class _DownloadTabState extends State<_DownloadTab> {
+  List<ServerBook> _books = [];
+  String? _error;
+  bool _loading = false;
+  final Set<String> _downloading = {};
 
   Future<void> _search() async {
     setState(() {
       _loading = true;
       _error = null;
     });
-    final baseUrl = _urlController.text.trim().replaceAll(RegExp(r'/$'), '');
     try {
-      final books = await _service.fetchServerLibrary(baseUrl);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_prefKey, baseUrl);
+      final books = await widget.service.fetchServerLibrary(widget.baseUrlGetter());
       setState(() => _books = books);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -53,10 +143,9 @@ class _ServerImportScreenState extends State<ServerImportScreen> {
   }
 
   Future<void> _download(ServerBook item) async {
-    final baseUrl = _urlController.text.trim().replaceAll(RegExp(r'/$'), '');
     setState(() => _downloading.add(item.name));
     try {
-      await _service.downloadFromServer(baseUrl, item);
+      await widget.service.downloadFromServer(widget.baseUrlGetter(), item);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Descargado: ${item.title}')),
@@ -64,9 +153,7 @@ class _ServerImportScreenState extends State<ServerImportScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       setState(() => _downloading.remove(item.name));
@@ -75,89 +162,256 @@ class _ServerImportScreenState extends State<ServerImportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Descargar del servidor')),
-      body: Padding(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ElevatedButton(
+            onPressed: _loading ? null : _search,
+            child: _loading
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Buscar audiolibros en el servidor'),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+            ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: _books.isEmpty
+                ? const Center(child: Text('Sin resultados todavia', style: TextStyle(color: Colors.grey)))
+                : ListView.builder(
+                    itemCount: _books.length,
+                    itemBuilder: (context, i) {
+                      final book = _books[i];
+                      final downloading = _downloading.contains(book.name);
+                      return Card(
+                        child: ListTile(
+                          title: Text(book.title),
+                          subtitle: Text('${book.sizeMb} MB · ${book.chaptersCount} capitulos'),
+                          trailing: downloading
+                              ? const SizedBox(
+                                  width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                              : IconButton(
+                                  icon: const Icon(Icons.download),
+                                  onPressed: () => _download(book),
+                                ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GenerateTab extends StatefulWidget {
+  final LibraryService service;
+  final String Function() baseUrlGetter;
+
+  const _GenerateTab({required this.service, required this.baseUrlGetter});
+
+  @override
+  State<_GenerateTab> createState() => _GenerateTabState();
+}
+
+class _GenerateTabState extends State<_GenerateTab> {
+  VoiceCatalog? _catalog;
+  String? _catalogError;
+  File? _selectedFile;
+  String _lang = 'auto';
+  String _voice = '';
+
+  bool _generating = false;
+  String? _error;
+  String? _stage;
+  int _step = 0;
+  int _total = 5;
+  Timer? _pollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCatalog();
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadCatalog() async {
+    try {
+      final catalog = await widget.service.fetchVoices(widget.baseUrlGetter());
+      setState(() {
+        _catalog = catalog;
+        _catalogError = null;
+      });
+    } catch (e) {
+      setState(() => _catalogError = 'No se pudo conectar al servidor: $e');
+    }
+  }
+
+  Future<void> _pickFile() async {
+    try {
+      final file = await widget.service.pickDocument();
+      if (file != null) setState(() => _selectedFile = file);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
+  }
+
+  Future<void> _generate() async {
+    if (_selectedFile == null) return;
+    setState(() {
+      _generating = true;
+      _error = null;
+      _stage = 'Subiendo archivo...';
+      _step = 0;
+    });
+
+    final baseUrl = widget.baseUrlGetter();
+    try {
+      final jobId =
+          await widget.service.generateOnServer(baseUrl, _selectedFile!, _lang, _voice);
+      _pollTimer = Timer.periodic(const Duration(seconds: 1), (_) => _poll(baseUrl, jobId));
+    } catch (e) {
+      setState(() {
+        _generating = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  Future<void> _poll(String baseUrl, String jobId) async {
+    try {
+      final job = await widget.service.fetchJobStatus(baseUrl, jobId);
+      setState(() {
+        _stage = job['stage'] as String?;
+        _step = job['step'] as int? ?? 0;
+        _total = job['total'] as int? ?? 5;
+      });
+
+      if (job['status'] == 'done') {
+        _pollTimer?.cancel();
+        final book = await widget.service
+            .downloadGeneratedJob(baseUrl, jobId, job['out_name'] as String);
+        setState(() {
+          _generating = false;
+          _selectedFile = null;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('Audiolibro generado: ${book.title}')));
+        }
+      } else if (job['status'] == 'error') {
+        _pollTimer?.cancel();
+        setState(() {
+          _generating = false;
+          _error = job['error'] as String? ?? 'Fallo la generacion';
+        });
+      }
+    } catch (e) {
+      _pollTimer?.cancel();
+      setState(() {
+        _generating = false;
+        _error = 'Se perdio la conexion con el servidor';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_catalogError != null) {
+      return Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                'Esto solo funciona si tu celular esta conectado al mismo WiFi '
-                'que la PC, y la PC tiene la web de audiolibro-generator corriendo '
-                'en ese momento.\n\n'
-                'Si no estas en esa red (por ejemplo con datos moviles, o la PC '
-                'apagada), no va a conectar. Usa "Importar" en vez de esto: '
-                'mandate el .m4b por Drive, OneDrive o WhatsApp y elegilo ahi.',
-                style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.4),
-              ),
-            ),
+            Text(_catalogError!, style: const TextStyle(color: Colors.redAccent)),
             const SizedBox(height: 12),
-            const Text(
-              'Direccion del servidor web. En emulador Android usa 10.0.2.2; '
-              'en celular fisico usa la IP LAN de la PC (ej: 192.168.1.X:8000).',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _urlController,
-                    decoration: const InputDecoration(
-                      labelText: 'URL del servidor',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _loading ? null : _search,
-                  child: _loading
-                      ? const SizedBox(
-                          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Buscar'),
-                ),
-              ],
-            ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text(_error!, style: const TextStyle(color: Colors.redAccent)),
-              ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _books.isEmpty
-                  ? const Center(child: Text('Sin resultados todavia', style: TextStyle(color: Colors.grey)))
-                  : ListView.builder(
-                      itemCount: _books.length,
-                      itemBuilder: (context, i) {
-                        final book = _books[i];
-                        final downloading = _downloading.contains(book.name);
-                        return Card(
-                          child: ListTile(
-                            title: Text(book.title),
-                            subtitle: Text('${book.sizeMb} MB · ${book.chaptersCount} capitulos'),
-                            trailing: downloading
-                                ? const SizedBox(
-                                    width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                                : IconButton(
-                                    icon: const Icon(Icons.download),
-                                    onPressed: () => _download(book),
-                                  ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
+            ElevatedButton(onPressed: _loadCatalog, child: const Text('Reintentar')),
           ],
         ),
+      );
+    }
+    if (_catalog == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final languages = {'auto': 'Autodetectar', ..._catalog!.languages};
+    final voices = _catalog!.voices[_lang] ?? [];
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          OutlinedButton.icon(
+            onPressed: _generating ? null : _pickFile,
+            icon: const Icon(Icons.upload_file),
+            label: Text(_selectedFile == null
+                ? 'Elegir PDF / DOCX / TXT'
+                : _selectedFile!.uri.pathSegments.last),
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            initialValue: _lang,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Idioma'),
+            items: languages.entries
+                .map((e) => DropdownMenuItem(
+                      value: e.key,
+                      child: Text(e.value, overflow: TextOverflow.ellipsis),
+                    ))
+                .toList(),
+            onChanged: _generating
+                ? null
+                : (v) => setState(() {
+                      _lang = v ?? 'auto';
+                      _voice = '';
+                    }),
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            initialValue: _voice.isEmpty ? '' : _voice,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Voz'),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('(por defecto)')),
+              ...voices.map((v) => DropdownMenuItem(
+                    value: v.id,
+                    child: Text(v.label, overflow: TextOverflow.ellipsis),
+                  )),
+            ],
+            onChanged: (_lang == 'auto' || _generating)
+                ? null
+                : (v) => setState(() => _voice = v ?? ''),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: (_selectedFile == null || _generating) ? null : _generate,
+            child: const Text('Generar audiolibro'),
+          ),
+          if (_generating) ...[
+            const SizedBox(height: 20),
+            LinearProgressIndicator(value: _total > 0 ? _step / _total : null),
+            const SizedBox(height: 8),
+            Text(_stage ?? '...', style: const TextStyle(color: Colors.grey)),
+          ],
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+            ),
+        ],
       ),
     );
   }

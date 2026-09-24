@@ -36,6 +36,36 @@ class ServerBook {
   }
 }
 
+class VoiceOption {
+  final String id;
+  final String label;
+
+  VoiceOption({required this.id, required this.label});
+
+  factory VoiceOption.fromJson(Map<String, dynamic> json) {
+    return VoiceOption(id: json['id'] as String, label: json['label'] as String);
+  }
+}
+
+class VoiceCatalog {
+  final Map<String, String> languages; // codigo -> nombre
+  final Map<String, List<VoiceOption>> voices; // codigo -> voces
+
+  VoiceCatalog({required this.languages, required this.voices});
+
+  factory VoiceCatalog.fromJson(Map<String, dynamic> json) {
+    final languages = (json['languages'] as Map<String, dynamic>)
+        .map((k, v) => MapEntry(k, v as String));
+    final voices = (json['voices'] as Map<String, dynamic>).map(
+      (k, v) => MapEntry(
+        k,
+        (v as List<dynamic>).map((e) => VoiceOption.fromJson(e as Map<String, dynamic>)).toList(),
+      ),
+    );
+    return VoiceCatalog(languages: languages, voices: voices);
+  }
+}
+
 class LibraryService {
   Future<Directory> libraryDir() async {
     final docs = await getApplicationDocumentsDirectory();
@@ -106,6 +136,71 @@ class LibraryService {
     await dest.writeAsBytes(res.bodyBytes);
 
     final metaRes = await http.get(Uri.parse('$baseUrl${item.metaUrl}'));
+    if (metaRes.statusCode == 200) {
+      final sidecar = File('$destPath.chapters.json');
+      await sidecar.writeAsString(metaRes.body);
+    }
+
+    return Book.fromFile(dest);
+  }
+
+  Future<VoiceCatalog> fetchVoices(String baseUrl) async {
+    final res = await http.get(Uri.parse('$baseUrl/api/voices'));
+    if (res.statusCode != 200) {
+      throw Exception('Servidor respondio ${res.statusCode}');
+    }
+    return VoiceCatalog.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  /// Elige un documento (PDF/DOCX/TXT) del celular para mandarlo al servidor
+  /// a generar. Igual que importFromPicker: FileType.any + validacion manual,
+  /// asi Drive/WhatsApp no quedan afuera por MIME mal reportado.
+  Future<File?> pickDocument() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.any);
+    if (result == null || result.files.single.path == null) return null;
+    final file = File(result.files.single.path!);
+    final ext = file.path.toLowerCase();
+    if (!ext.endsWith('.pdf') && !ext.endsWith('.docx') && !ext.endsWith('.txt')) {
+      throw Exception('Elegiste "${file.uri.pathSegments.last}", que no es PDF/DOCX/TXT');
+    }
+    return file;
+  }
+
+  Future<String> generateOnServer(String baseUrl, File file, String lang, String voice) async {
+    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/api/generate'))
+      ..fields['lang'] = lang
+      ..fields['voice'] = voice
+      ..files.add(await http.MultipartFile.fromPath('file', file.path));
+
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode != 200) {
+      throw Exception('El servidor rechazo el archivo (${res.statusCode})');
+    }
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return data['job_id'] as String;
+  }
+
+  Future<Map<String, dynamic>> fetchJobStatus(String baseUrl, String jobId) async {
+    final res = await http.get(Uri.parse('$baseUrl/api/jobs/$jobId'));
+    if (res.statusCode != 200) {
+      throw Exception('No se encontro el trabajo en el servidor');
+    }
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  Future<Book> downloadGeneratedJob(String baseUrl, String jobId, String outName) async {
+    final dir = await libraryDir();
+    final destPath = '${dir.path}/$outName';
+
+    final res = await http.get(Uri.parse('$baseUrl/api/jobs/$jobId/download'));
+    if (res.statusCode != 200) {
+      throw Exception('No se pudo descargar el audiolibro generado (${res.statusCode})');
+    }
+    final dest = File(destPath);
+    await dest.writeAsBytes(res.bodyBytes);
+
+    final metaRes = await http.get(Uri.parse('$baseUrl/api/library/$outName/meta'));
     if (metaRes.statusCode == 200) {
       final sidecar = File('$destPath.chapters.json');
       await sidecar.writeAsString(metaRes.body);
