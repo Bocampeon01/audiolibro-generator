@@ -28,7 +28,7 @@ from reportlab.platypus import (
 HERE = Path(__file__).resolve().parent
 IMG = HERE / "img"
 OUT = HERE / "Manual_Audiolibros.pdf"
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 ACCENT = colors.HexColor("#6C5CE7")
 DARK = colors.HexColor("#171A21")
@@ -357,8 +357,8 @@ def part_app_basics():
     story.append(p("3.1 Instalar", "h2"))
     story += steps([
         "Descargá el instalador en el celular. Hay dos versiones:"
-        "<br/>• <b>Audiolibros-1.2.0-arm64.apk</b>: para casi cualquier celular de los últimos años. Probá esta primero."
-        "<br/>• <b>Audiolibros-1.2.0-armv7.apk</b>: solo si la anterior dice <i>no compatible</i> (celulares muy viejos).",
+        "<br/>• <b>Audiolibros-1.3.0-arm64.apk</b>: para casi cualquier celular de los últimos años. Probá esta primero."
+        "<br/>• <b>Audiolibros-1.3.0-armv7.apk</b>: solo si la anterior dice <i>no compatible</i> (celulares muy viejos).",
         "Abrí el archivo. Android va a pedir permiso para <b>instalar apps de origen desconocido</b>: "
         "permitilo para el navegador o el administrador de archivos que estés usando.",
         "Tocá <b>Instalar</b>. La app aparece como <b>Audiolibros</b>.",
@@ -427,8 +427,11 @@ def part_app_features():
             ["Luna", "Temporizador para dormir (ver 4.4)."],
             ["N capítulos", "Lista de capítulos (ver 4.3)."],
             ["Ícono de hoja (arriba)", "Mostrar u ocultar el texto sincronizado (ver 4.2)."],
+            ["Parlante (arriba)", "Refuerzo de volumen para libros grabados muy bajo (ver 4.5)."],
         ], [3.2 * cm, CONTENT_W - 5 * cm - 3.2 * cm - 10]),
         p("La app recuerda dónde dejaste cada libro. Si lo terminaste, la próxima vez arranca desde el principio."),
+        p("Mientras el audio suena, la <b>pantalla no se apaga</b> ni se bloquea, así podés seguir el "
+          "texto. Al pausar vuelve a apagarse sola con el tiempo normal del celular."),
     ], "app_reproductor", "Reproductor.")
 
     story.append(p("4.2 Seguir el texto mientras escuchás", "h2"))
@@ -448,7 +451,7 @@ def part_app_features():
     story += side([
         p("Tocá la <b>luna</b> y elegí:"),
         *bullets([
-            "<b>5, 15, 30, 45 o 60 minutos</b>: el tiempo solo corre mientras suena. En los últimos "
+            "<b>De 5 a 120 minutos</b>: el tiempo solo corre mientras suena. En los últimos "
             "10 segundos baja el volumen de a poco y después pausa.",
             "<b>Al terminar este capítulo</b>: pausa justo al final del capítulo actual y queda listo "
             "para empezar el siguiente.",
@@ -456,9 +459,26 @@ def part_app_features():
         ]),
         p("Mientras está activo, en lugar de la luna se ve la cuenta regresiva (o <i>Fin cap.</i>), "
           "y en el mini-reproductor dice cuánto falta."),
+        p("Al cumplirse el tiempo el audio se pausa y la pantalla deja de quedar encendida: el "
+          "celular <b>se apaga y se bloquea solo</b> después del tiempo de espera que tengas "
+          "configurado en Android (Ajustes → Pantalla). Ideal para escuchar al acostarte."),
     ], "app_temporizador", "Opciones del temporizador.")
 
-    story.append(p("4.5 Mini-reproductor y segundo plano", "h2"))
+    story.append(p("4.5 Refuerzo de volumen", "h2"))
+    story += side([
+        p("Muchos audiolibros bajados de internet (por ejemplo los de LibriVox) están grabados muy "
+          "bajo y no alcanza con subir el volumen del celular. Tocá el <b>parlante</b> arriba a la "
+          "derecha y elegí cuánto amplificar:"),
+        *bullets([
+            "<b>Normal</b>: sin refuerzo. Es lo que usan los libros generados acá, que ya salen "
+            "con buen volumen.",
+            "<b>Alto, Muy alto, Máximo</b> (+5, +10, +15 dB): cada paso se nota claramente.",
+        ]),
+        p("Los audiolibros de otras fuentes arrancan en <b>Muy alto</b>. La elección se "
+          "<b>recuerda para cada libro</b>. El parlante se ve de color cuando hay refuerzo activo."),
+    ], "app_refuerzo", "Refuerzo de volumen.", crop=(0, 1400, 1080, 2300))
+
+    story.append(p("4.6 Mini-reproductor y segundo plano", "h2"))
     story += side([
         p("Si volvés a la biblioteca mientras escuchás, el audio <b>sigue sonando</b> y aparece una "
           "barra abajo con el título, el progreso y el botón de pausa; tocala para volver al "
@@ -471,7 +491,7 @@ def part_app_features():
              crop=(0, 460, 1080, 1060)),
     ], "app_miniplayer", "Mini-reproductor (con temporizador activo).")
 
-    story.append(p("4.6 Borrar un audiolibro", "h2"))
+    story.append(p("4.7 Borrar un audiolibro", "h2"))
     story.append(p("En la biblioteca, deslizá el libro hacia la <b>izquierda</b> y confirmá. Se borra solo "
                    "del celular; en la PC sigue estando en la Biblioteca del generador."))
     return story
@@ -500,6 +520,12 @@ def part_faq():
         ["Importé un libro y no tiene capítulos ni texto",
          "Los audiolibros generados con versiones anteriores a la 1.1 no traen el texto adentro del "
          "archivo. Volvé a generarlo, o descargalo con Servidor."],
+        ["Un audiolibro se escucha muy bajo",
+         "Tocá el <b>parlante</b> del reproductor y subí el refuerzo de volumen (ver 4.5). Los libros "
+         "generados desde la versión 1.3 ya salen con el volumen nivelado."],
+        ["¿Puedo escuchar audiolibros de Spotify?",
+         "No. Spotify entrega el audio cifrado y solo se puede reproducir dentro de su propia app; "
+         "ninguna otra app puede abrirlo ni descargarlo."],
         ["Android no deja instalar la app",
          "Permití <i>instalar apps de origen desconocido</i> para la app con la que abriste el archivo. "
          "Si dice “no compatible”, usá la versión armv7."],

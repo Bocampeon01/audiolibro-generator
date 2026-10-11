@@ -62,7 +62,7 @@ Abre http://localhost:8000. La pagina muestra la URL para el celular (IP de la P
 - Flutter (en WSL): `flutter test` (parser MP4 contra `test/fixtures/sample.m4b` generado por el pipeline, smoke test).
 
 ### Formato del M4B generado
-M4B estandar (AAC + capitulos embebidos, abre en cualquier reproductor). Ademas lleva en el tag `lyrics` (atom `©lyr`) un JSON `{title, chapters, sentences}` con el texto y tiempos de cada oracion: la app lo lee al importar, asi un `.m4b` mandado solo por WhatsApp/Drive conserva capitulos y texto sincronizado. El `.chapters.json` de al lado es el mismo JSON (lo usa el servidor para `/meta`).
+M4B estandar (AAC + capitulos embebidos, abre en cualquier reproductor). Volumen normalizado a -16 LUFS (`build_m4b.LOUDNORM`, filtro `loudnorm` de ffmpeg; lleva `-ar` explicito porque loudnorm sube a 192 kHz). Ademas lleva en el tag `lyrics` (atom `©lyr`) un JSON `{title, chapters, sentences}` con el texto y tiempos de cada oracion: la app lo lee al importar, asi un `.m4b` mandado solo por WhatsApp/Drive conserva capitulos y texto sincronizado. El `.chapters.json` de al lado es el mismo JSON (lo usa el servidor para `/meta`).
 
 ### App Android (reproductor)
 Codigo en `android_app/`. En esta PC el build de Gradle desde Windows esta roto (bug de sockets AF_UNIX del propio Windows, no relacionado al proyecto — ver Memory.md). Mientras no se resuelva:
@@ -74,6 +74,9 @@ Codigo en `android_app/`. En esta PC el build de Gradle desde Windows esta roto 
 - `PlayerController` (singleton) tiene el unico `AudioPlayer`: el audio sigue al volver a la biblioteca, con **mini-player** abajo (titulo, progreso, play/pausa, toque = reproductor completo). Abrir otro libro pausa el anterior (no arranca solo).
 - `just_audio_background`: suena con pantalla apagada o en otra app, notificacion con controles, teclas multimedia/auriculares.
 - **Temporizador para dormir** (icono luna): 5/15/30/45/60 min (solo descuenta mientras suena, baja el volumen los ultimos 10s) o "al terminar este capitulo" (pausa justo en el limite y queda listo para el siguiente).
+- **Refuerzo de volumen** (icono parlante en el reproductor): `AndroidLoudnessEnhancer` en el `AudioPipeline` de just_audio, niveles 0/+5/+10/+15 dB, guardado **por libro**. Default: 0 para libros generados aca (traen `sentences`), +10 dB para externos (LibriVox medido en -23 a -29 LUFS contra -16 de los nuestros).
+- **Pantalla encendida mientras suena** (`wakelock_plus`, atado a `playingStream`): al pausar (a mano o por el temporizador) se libera y el celular se apaga/bloquea con su timeout normal. Bloquear de inmediato exigiria permiso de administrador de dispositivo: descartado.
+- Temporizador: ahora tambien 90 y 120 min.
 - `GenerationService` (singleton): una generacion lanzada desde "Servidor > Generar" sigue aunque se salga de esa pantalla; al terminar se descarga sola y la biblioteca se refresca y avisa.
 
 ### Build release (para instalar en el celular)
@@ -84,6 +87,7 @@ En WSL: `flutter build apk --release --split-per-abi` -> `app-arm64-v8a-release.
 - **Celular (Importar)**: selector filtrado a esos formatos (Android muestra el resto en gris y oculta Imagenes/Documentos); si el usuario cancela, snackbar "Ver todos los archivos" sin filtro. Capitulos se leen en Dart de M4B/M4A: `chpl` (ffmpeg/mp4v2) o pista de capitulos QuickTime (LibriVox/iTunes: los LibriVox reales del usuario solo traen esta). MP3 importado por el celu: sin capitulos (por Servidor si llegan).
 
 ## Pendiente / siguientes pasos
+- Spotify: **no se puede** integrar (audio con DRM, solo reproducible dentro de su app; el SDK solo permite controlar la app de Spotify). Descartado, no reintentar.
 - [ ] Clave de firma propia (necesaria para Play Store y para actualizar sin desinstalar desde otra PC).
 - [ ] Si Android mata la app mientras genera en segundo plano, ese libro hay que bajarlo a mano desde "Descargar".
 - [ ] Despues de actualizar el codigo Python, reiniciar el servidor (`iniciar_web.bat`): uvicorn no recarga solo.

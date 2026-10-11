@@ -1,9 +1,15 @@
 """Empaquetado de wavs de capitulos en un M4B con capitulos embebidos, via ffmpeg."""
 import json
 import subprocess
+import wave
 from pathlib import Path
 
 from . import wav_utils
+
+
+# Volumen parejo entre voces (cada modelo Piper sale a un nivel distinto, medido
+# -15 a -19 LUFS). -16 LUFS es el nivel habitual para voz en celulares.
+LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
 
 
 def _write_concat_list(wav_paths: list[Path], list_path: Path) -> None:
@@ -89,12 +95,17 @@ def build_m4b(
     _write_concat_list(chapter_wavs, concat_list)
     _write_ffmetadata(chapters, ffmetadata, book_title, sync_json)
 
+    with wave.open(str(chapter_wavs[0]), "rb") as first:
+        sample_rate = first.getframerate()
+
     cmd = [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
         "-f", "concat", "-safe", "0", "-i", str(concat_list),
         "-i", str(ffmetadata),
         "-map_metadata", "1",
         "-map", "0:a",
+        # loudnorm trabaja a 192 kHz por dentro: sin -ar el M4B saldria a 192 kHz.
+        "-af", LOUDNORM, "-ar", str(sample_rate),
         "-c:a", "aac", "-b:a", "64k",
         "-f", "mp4",
         str(out_m4b),

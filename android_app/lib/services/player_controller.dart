@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../models/book.dart';
 import 'playback_position_service.dart';
@@ -11,16 +12,32 @@ import 'playback_position_service.dart';
 /// biblioteca (mini-player) sin cortar el audio. just_audio_background ademas exige
 /// una sola instancia de AudioPlayer.
 class PlayerController extends ChangeNotifier {
-  PlayerController._();
+  PlayerController._() {
+    player.playingStream.listen(_keepScreenOn);
+  }
   static final instance = PlayerController._();
 
-  final player = AudioPlayer();
+  // Refuerzo de volumen: el volumen del reproductor topa en 1.0, asi que subir de
+  // ahi necesita un efecto. LoudnessEnhancer amplifica con limitador (no satura).
+  final _boost = AndroidLoudnessEnhancer();
+  late final player = AudioPlayer(
+    audioPipeline: AudioPipeline(androidAudioEffects: [_boost]),
+  );
   final _positions = PlaybackPositionService();
+
+  static const boostLevels = [0.0, 5.0, 10.0, 15.0];
+
+  // Lo generado aca sale normalizado (~-16 LUFS); los audiolibros de afuera
+  // (LibriVox ronda -23 a -29 LUFS) suenan mucho mas bajo y arrancan reforzados.
+  static const _externalBoostDb = 10.0;
 
   Book? book;
   bool loading = false;
   String? loadError;
   double speed = 1.0;
+
+  /// Refuerzo de volumen del libro actual, en dB (0 = sin refuerzo).
+  double boostDb = 0;
 
   /// Temporizador para dormir: tiempo restante (solo corre mientras suena)...
   Duration? sleepRemaining;
@@ -61,6 +78,10 @@ class PlayerController extends ChangeNotifier {
       );
       speed = await _positions.loadSpeed();
       await player.setSpeed(speed);
+      await _applyBoost(
+        await _positions.loadBoost(b.id) ??
+            (b.sentences.isEmpty ? _externalBoostDb : 0),
+      );
       final saved = await _positions.loadPosition(b.id);
       if (saved != null) await player.seek(saved);
     } catch (e) {
@@ -108,6 +129,30 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
     await player.setSpeed(value);
     await _positions.saveSpeed(value);
+  }
+
+  Future<void> setBoost(double db) async {
+    final b = book;
+    await _applyBoost(db);
+    notifyListeners();
+    if (b != null) await _positions.saveBoost(b.id, db);
+  }
+
+  Future<void> _applyBoost(double db) async {
+    boostDb = db;
+    await _boost.setTargetGain(db);
+    await _boost.setEnabled(db > 0);
+  }
+
+  /// Pantalla encendida solo mientras suena: se puede seguir el texto sin que el
+  /// celular se bloquee, y al pausar (a mano o por el temporizador) vuelve a
+  /// apagarse y bloquearse solo con el tiempo de espera normal del sistema.
+  Future<void> _keepScreenOn(bool playing) async {
+    try {
+      await WakelockPlus.toggle(enable: playing);
+    } catch (_) {
+      // Sin plugin (tests) o sin soporte: la reproduccion no depende de esto.
+    }
   }
 
   Future<void> _saveNow() async {

@@ -94,12 +94,57 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
+  void _showBoost() {
+    const names = ['Normal', 'Alto', 'Muy alto', 'Maximo'];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF171A21),
+      builder: (ctx) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(
+                title: Text(
+                  'Refuerzo de volumen',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: Text(
+                  'Para audiolibros grabados muy bajo. Se recuerda por libro.',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+              for (final (i, db) in PlayerController.boostLevels.indexed)
+                ListTile(
+                  leading: Icon(
+                    db == _controller.boostDb
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                  ),
+                  title: Text(
+                    db == 0 ? names[i] : '${names[i]} (+${db.toInt()} dB)',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    _controller.setBoost(db);
+                    Navigator.pop(ctx);
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _showSleepTimer() {
     final active =
         _controller.sleepRemaining != null || _controller.sleepAtChapterEnd;
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF171A21),
+      // Sin esto la hoja se corta a media pantalla y esconde las ultimas opciones.
+      isScrollControlled: true,
       builder: (ctx) {
         void pick(VoidCallback action) {
           action();
@@ -116,11 +161,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   style: TextStyle(color: Colors.white),
                 ),
                 subtitle: Text(
-                  'Pausa sola (bajando el volumen al final). Solo cuenta mientras suena.',
+                  'Pausa sola (bajando el volumen al final) y deja que el celular '
+                  'se apague y bloquee. Solo cuenta mientras suena.',
                   style: TextStyle(color: Colors.grey),
                 ),
               ),
-              for (final minutes in const [5, 15, 30, 45, 60])
+              for (final minutes in const [5, 15, 30, 45, 60, 90, 120])
                 ListTile(
                   leading: const Icon(Icons.timer_outlined),
                   title: Text(
@@ -376,6 +422,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
         appBar: AppBar(
           title: Text(widget.book.title, overflow: TextOverflow.ellipsis),
           actions: [
+            IconButton(
+              icon: Icon(
+                _controller.boostDb > 0
+                    ? Icons.volume_up
+                    : Icons.volume_up_outlined,
+                color: _controller.boostDb > 0
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
+              ),
+              tooltip: 'Refuerzo de volumen',
+              onPressed: _showBoost,
+            ),
             if (widget.book.sentences.isNotEmpty)
               IconButton(
                 icon: Icon(_showText ? Icons.article : Icons.article_outlined),

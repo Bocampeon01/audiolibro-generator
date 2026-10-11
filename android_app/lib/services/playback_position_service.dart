@@ -4,6 +4,7 @@ class PlaybackPositionService {
   static const _speedKey = 'playback_speed';
 
   String _key(String bookId) => 'resume_pos::$bookId';
+  String _boostKey(String bookId) => 'volume_boost::$bookId';
 
   Future<Duration?> loadPosition(String bookId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -20,6 +21,18 @@ class PlaybackPositionService {
   Future<void> clear(String bookId) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key(bookId));
+    await prefs.remove(_boostKey(bookId));
+  }
+
+  /// null = el usuario nunca eligio refuerzo para este libro.
+  Future<double?> loadBoost(String bookId) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble(_boostKey(bookId));
+  }
+
+  Future<void> saveBoost(String bookId, double db) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_boostKey(bookId), db);
   }
 
   Future<double> loadSpeed() async {
